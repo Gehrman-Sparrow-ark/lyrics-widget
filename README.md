@@ -33,6 +33,16 @@ Classic `hyprland.conf`: `bind = SUPER CTRL, L, exec, ...` and `exec-once = qs -
 - The reload button redoes the search.
 - Search by hand: `qs -c lyrics ipc call lyrics search "artist title"`
 
+## Troubleshooting
+
+- **Keybind does nothing or shows a Hyprland error:** that key is probably already used. Check with
+  `grep -rn -i 'SUPER.*CTRL.*L"' ~/.config/hypr/` and pick a free key.
+- **Chinese, Japanese or Korean lyrics show as boxes:** install a CJK font (`noto-fonts-cjk`).
+- **`qs -c lyrics` says the config can't be found:** run `lyrics-widget-setup` again, or start it with
+  `qs -p /usr/share/lyrics-widget/shell.qml`.
+- **Colors look plain:** the widget follows end-4's `colors.json` when it exists, otherwise it uses a built-in palette.
+- After upgrading the package, run `lyrics-widget-setup` again so the copied `shell.qml` updates.
+
 ## Notes
 
 Lyrics are not included and are not stored in this repo. Kugou and NetEase are
