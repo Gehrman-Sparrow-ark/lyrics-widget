@@ -5,4 +5,23 @@ target="$HOME/.config/quickshell/lyrics"
 [ -L "$target" ] && rm "$target"
 mkdir -p "$target"
 cp -f /usr/share/lyrics-widget/shell.qml "$target/shell.qml"
+
+# Automatically configure Hyprland startup
+
+HYPR_CONF="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprland.conf"
+STARTUP_CMD="exec-once = qs -p $HOME/.config/quickshell/lyrics"
+
+if [ -f "$HYPR_CONF" ]; then
+    if ! grep -Fq "$STARTUP_CMD" "$HYPR_CONF"; then
+        printf '\n# Lyrics Widget - automatic startup\n%s\n' \
+            "$STARTUP_CMD" >> "$HYPR_CONF"
+
+        echo "Lyrics Widget: Hyprland startup configured."
+    else
+        echo "Lyrics Widget: Startup already configured."
+    fi
+else
+    echo "Hyprland config not found. Skipping automatic startup."
+fi
+
 echo "Done. Start it with: setsid -f qs -p ~/.config/quickshell/lyrics"
