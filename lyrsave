@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+import os, re, sys
+
+LYR_DIR = os.path.expanduser("~/Music/Lyrics")
+
+
+def fix(s):
+    return s.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+
+
+def main():
+    if len(sys.argv) < 6:
+        sys.exit("usage: lyrsave ARTIST TITLE OFFSET_MS PATH LRC")
+    artist, title, off, path, lrc = [fix(x) for x in sys.argv[1:6]]
+    try:
+        off = int(float(off))
+    except ValueError:
+        off = 0
+    lrc = re.sub(r"^\[offset:[^\]]*\][ \t]*\r?\n?", "", lrc, flags=re.M | re.I)
+    if off != 0:
+        lrc = "[offset:%d]\n%s" % (off, lrc)
+    os.makedirs(LYR_DIR, exist_ok=True)
+    base = os.path.realpath(LYR_DIR)
+    if path and path.lower().endswith(".lrc") and os.path.realpath(path).startswith(base + os.sep):
+        dest = path
+    else:
+        raw = ("%s - %s" % (artist, title)) if artist else title
+        name = re.sub(r"\s+", " ", re.sub(r'[\\/:*?"<>|\x00-\x1f]', " ", raw)).strip() or "untitled"
+        while len(name.encode("utf-8")) > 200:
+            name = name[:-1]
+        dest = os.path.join(LYR_DIR, name + ".lrc")
+    tmp = dest + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(lrc)
+    os.replace(tmp, dest)
+    print(dest)
+
+
+main()

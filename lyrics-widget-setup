@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+mkdir -p "$HOME/.config/quickshell" "$HOME/Music/Lyrics"
+target="$HOME/.config/quickshell/lyrics"
+if [ -e "$target" ] && [ ! -L "$target" ]; then
+    echo "$target already exists and is not a symlink, move it away first" >&2
+    exit 1
+fi
+ln -sfn /usr/share/lyrics-widget "$target"
+echo "Done. Start it with: setsid -f qs -c lyrics"
