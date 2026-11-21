@@ -1,0 +1,12 @@
+post_install() {
+    echo ":: lyrics-widget installed."
+    echo ":: Run 'lyrics-widget-setup' as your normal user (add --hyprland to also set up autostart and a keybind)."
+}
+
+post_upgrade() {
+    echo ":: lyrics-widget updated. Run 'lyrics-widget-setup' again to refresh your copy of the widget."
+}
+
+post_remove() {
+    echo ":: Your copy in ~/.config/quickshell/lyrics and your lyrics in ~/Music/Lyrics were left in place."
+}

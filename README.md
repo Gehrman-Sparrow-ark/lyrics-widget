@@ -18,12 +18,12 @@ Quickshell and Python 3.
 
 ## Hyprland keybinds (Lua config)
 
-    hl.bind("SUPER + CTRL + L", hl.dsp.exec_cmd("sh -c 'qs -c lyrics ipc call lyrics toggle || qs -c lyrics'"))
-    hl.bind("SUPER + CTRL + equal", hl.dsp.exec_cmd("qs -c lyrics ipc call lyrics nudge 0.5"))
-    hl.bind("SUPER + CTRL + minus", hl.dsp.exec_cmd("qs -c lyrics ipc call lyrics nudge -0.5"))
-    hl.on("hyprland.start", function () hl.exec_cmd("qs -c lyrics") end)
+    hl.bind("SUPER + CTRL + L", hl.dsp.exec_cmd("sh -c 'qs -p ~/.config/quickshell/lyrics ipc call lyrics toggle || qs -p ~/.config/quickshell/lyrics'"))
+    hl.bind("SUPER + CTRL + equal", hl.dsp.exec_cmd("qs -p ~/.config/quickshell/lyrics ipc call lyrics nudge 0.5"))
+    hl.bind("SUPER + CTRL + minus", hl.dsp.exec_cmd("qs -p ~/.config/quickshell/lyrics ipc call lyrics nudge -0.5"))
+    hl.on("hyprland.start", function () hl.exec_cmd("qs -p ~/.config/quickshell/lyrics") end)
 
-Classic `hyprland.conf`: `bind = SUPER CTRL, L, exec, ...` and `exec-once = qs -c lyrics`.
+Classic `hyprland.conf`: `bind = SUPER CTRL, L, exec, ...` and `exec-once = qs -p ~/.config/quickshell/lyrics`.
 
 ## Using it
 
@@ -38,7 +38,7 @@ Classic `hyprland.conf`: `bind = SUPER CTRL, L, exec, ...` and `exec-once = qs -
 - **Keybind does nothing or shows a Hyprland error:** that key is probably already used. Check with
   `grep -rn -i 'SUPER.*CTRL.*L"' ~/.config/hypr/` and pick a free key.
 - **Chinese, Japanese or Korean lyrics show as boxes:** install a CJK font (`noto-fonts-cjk`).
-- **`qs -c lyrics` says the config can't be found:** run `lyrics-widget-setup` again, or start it with
+- **`qs -p ~/.config/quickshell/lyrics` says the config can't be found:** run `lyrics-widget-setup` again, or start it with
   `qs -p /usr/share/lyrics-widget/shell.qml`.
 - **Colors look plain:** the widget follows end-4's `colors.json` when it exists, otherwise it uses a built-in palette.
 - After upgrading the package, run `lyrics-widget-setup` again so the copied `shell.qml` updates.
