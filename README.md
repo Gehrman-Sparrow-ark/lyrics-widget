@@ -11,7 +11,7 @@ then searches LRCLIB, Kugou and NetEase. Theme colors follow end-4's
     cd lyrics-widget
     makepkg -si
     lyrics-widget-setup
-    setsid -f qs -c lyrics
+    setsid -f qs -p ~/.config/quickshell/lyrics
 
 Requires a Wayland compositor with layer-shell support (Hyprland, Sway, niri, ...),
 Quickshell and Python 3.
@@ -31,7 +31,7 @@ Classic `hyprland.conf`: `bind = SUPER CTRL, L, exec, ...` and `exec-once = qs -
 - Click the line being sung to fix timing. The offset is saved in the .lrc file.
 - The list button opens a picker. Your choice is saved to `~/Music/Lyrics`.
 - The reload button redoes the search.
-- Search by hand: `qs -c lyrics ipc call lyrics search "artist title"`
+- Search by hand: `qs -p ~/.config/quickshell/lyrics ipc call lyrics search "artist title"`
 
 ## Troubleshooting
 
