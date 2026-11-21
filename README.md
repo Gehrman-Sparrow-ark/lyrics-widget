@@ -7,7 +7,7 @@ then searches LRCLIB, Kugou and NetEase. Theme colors follow end-4's
 
 ## Install (Arch)
 
-    git clone https://github.com/YOURNAME/lyrics-widget.git
+    git clone https://github.com/Gehrman-Sparrow-ark/lyrics-widget.git
     cd lyrics-widget
     makepkg -si
     lyrics-widget-setup
