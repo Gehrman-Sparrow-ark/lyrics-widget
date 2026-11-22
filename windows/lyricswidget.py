@@ -120,6 +120,21 @@ def load_palette():
     return {}
 
 
+STYLE_DEFAULT = {"bg": "", "line": "", "alpha": 0.85, "scale": 1.0}
+
+
+def load_style():
+    style = dict(STYLE_DEFAULT)
+    try:
+        data = json.loads((STATE_DIR / "style.json").read_text(encoding="utf-8"))
+        for k in style:
+            if k in data:
+                style[k] = data[k]
+    except Exception:
+        pass
+    return style
+
+
 def _prop(name):
     def getter(self):
         return getattr(self, "_" + name)
@@ -145,6 +160,7 @@ class Backend(QObject):
     pickerOpenChanged = Signal()
     busyChanged = Signal()
     paletteChanged = Signal()
+    styleChanged = Signal()
 
     sigMedia = Signal(bool, str, str, float, float, bool)
     sigLocal = Signal(int, object)
@@ -163,6 +179,7 @@ class Backend(QObject):
     pickerOpen = Property(bool, *_prop("pickerOpen"), notify=pickerOpenChanged)
     busy = Property(bool, *_prop("busy"), notify=busyChanged)
     palette = Property("QVariantMap", *_prop("palette"), notify=paletteChanged)
+    style = Property("QVariantMap", *_prop("style"), notify=styleChanged)
 
     def __init__(self):
         super().__init__()
@@ -178,6 +195,8 @@ class Backend(QObject):
         self._pickerOpen = False
         self._busy = False
         self._palette = load_palette()
+        self._style = load_style()
+        self.window = None
 
         self.title = ""
         self.artist = ""
@@ -211,6 +230,11 @@ class Backend(QObject):
         self.saveTimer.setSingleShot(True)
         self.saveTimer.setInterval(700)
         self.saveTimer.timeout.connect(self.saveCurrent)
+
+        self.styleTimer = QTimer(self)
+        self.styleTimer.setSingleShot(True)
+        self.styleTimer.setInterval(500)
+        self.styleTimer.timeout.connect(self.saveStyle)
 
     # ---- timing ----
     def curPos(self):
@@ -422,6 +446,60 @@ class Backend(QObject):
         self.autoOpen = True
         self.fetchLyrics(True)
 
+    def saveStyle(self):
+        try:
+            (STATE_DIR / "style.json").write_text(json.dumps(self._style), encoding="utf-8")
+        except Exception:
+            log.exception("saving style failed")
+
+    @Slot(str, str)
+    def setStyleColor(self, key, value):
+        s = dict(self._style)
+        s[key] = value
+        self.style = s
+        self.styleTimer.start()
+
+    @Slot(str, float)
+    def setStyleNumber(self, key, value):
+        s = dict(self._style)
+        s[key] = float(value)
+        self.style = s
+        self.styleTimer.start()
+
+    @Slot()
+    def resetStyle(self):
+        self.style = dict(STYLE_DEFAULT)
+        self.styleTimer.start()
+
+    @Slot(str)
+    def searchText(self, query):
+        query = query.strip()
+        if query:
+            self.search(query)
+
+    @Slot(bool)
+    def setFocusable(self, on):
+        """Let the widget take keyboard focus while the picker (with its search box) is open."""
+        try:
+            if self.window is None:
+                return
+            user32 = ctypes.windll.user32
+            get = user32.GetWindowLongPtrW
+            put = user32.SetWindowLongPtrW
+            get.restype = ctypes.c_ssize_t
+            get.argtypes = [wintypes.HWND, ctypes.c_int]
+            put.restype = ctypes.c_ssize_t
+            put.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+            hwnd = int(self.window.winId())
+            GWL_EXSTYLE, WS_EX_NOACTIVATE = -20, 0x08000000
+            ex = get(hwnd, GWL_EXSTYLE)
+            ex = (ex & ~WS_EX_NOACTIVATE) if on else (ex | WS_EX_NOACTIVATE)
+            put(hwnd, GWL_EXSTYLE, ex)
+            if on:
+                self.window.requestActivate()
+        except Exception:
+            log.exception("setFocusable failed")
+
     @Slot(result="QVariant")
     def cursorPos(self):
         p = QCursor.pos()
@@ -561,6 +639,7 @@ def main():
     if not engine.rootObjects():
         log.error("main.qml failed to load")
         return 1
+    backend.window = engine.rootObjects()[0]
 
     tray = QSystemTrayIcon(make_icon(), app)
     tray.setToolTip("Lyrics Widget")
