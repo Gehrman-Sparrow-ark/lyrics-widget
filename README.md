@@ -32,6 +32,8 @@ Classic `hyprland.conf`: `bind = SUPER CTRL, L, exec, ...` and `exec-once = qs -
 - The list button opens a picker. Your choice is saved to `~/Music/Lyrics`.
 - The reload button redoes the search.
 - Search by hand: `qs -p ~/.config/quickshell/lyrics ipc call lyrics search "artist title"`
+- The picker has a search box for typing artist and title yourself.
+- The "Aa" button opens the style panel: background colour, line colour, transparency and text size (saved automatically).
 
 ## Troubleshooting
 
