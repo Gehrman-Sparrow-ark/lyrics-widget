@@ -55,3 +55,9 @@ sent to the selected lyric services. Tested on Arch Linux with Hyprland.
 
 MIT
 
+
+## Windows
+
+A Windows version lives in the [windows](windows/) folder. See [windows/README.md](windows/README.md) for download and install steps.
+
+- Drag any corner of the widget to resize it. The "Aa" button opens the style panel (colours, transparency, text size), and the picker has a search box.

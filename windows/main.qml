@@ -4,7 +4,10 @@ import QtQuick.Window
 Window {
     id: win
 
-    readonly property int pillH: 150
+    property int curW: 760
+    property int curH: 150
+    property int shift: 0
+    readonly property int pillH: curH
     readonly property int popupH: 300
     readonly property int gap: 10
     readonly property var st: backend.style
@@ -46,19 +49,33 @@ Window {
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WindowDoesNotAcceptFocus
     color: "transparent"
     visible: backend.shown && backend.hasPlayer
-    width: 760
-    height: pillH
+    width: curW
+    height: curH + (popupOpen ? gap + popupH : 0)
     x: (Screen.width - width) / 2
     y: Screen.desktopAvailableHeight - height - 60
 
     onPopupOpenChanged: {
-        const bottom = win.y + win.height;
+        const extra = win.gap + win.popupH;
         if (popupOpen) {
-            win.height = win.pillH + win.gap + win.popupH;
-            win.y = Math.max(0, bottom - win.height);
+            const ny = Math.max(0, win.y - extra);
+            win.shift = win.y - ny;
+            win.y = ny;
         } else {
-            win.height = win.pillH;
-            win.y = bottom - win.height;
+            win.y = win.y + win.shift;
+            win.shift = 0;
+        }
+    }
+
+    Component.onCompleted: {
+        win.curW = Math.round(win.st.w || 760);
+        win.curH = Math.round(win.st.h || 150);
+    }
+
+    Connections {
+        target: backend
+        function onStyleChanged() {
+            win.curW = Math.round(win.st.w || 760);
+            win.curH = Math.round(win.st.h || 150);
         }
     }
 
@@ -160,6 +177,63 @@ Window {
             color: Qt.alpha(win.lineDim(), 0.5)
         }
 
+        Repeater {
+            model: ["tl", "tr", "bl", "br"]
+
+            delegate: MouseArea {
+                id: grip
+                readonly property bool onLeft: modelData.charAt(1) === "l"
+                readonly property bool onTop: modelData.charAt(0) === "t"
+                property real sx: 0
+                property real sy: 0
+                property real ox: 0
+                property real oy: 0
+                property real ow: 0
+                property real oh: 0
+                enabled: !win.popupOpen
+                width: 16
+                height: 16
+                x: onLeft ? 0 : pill.width - width
+                y: onTop ? 0 : pill.height - height
+                hoverEnabled: true
+                cursorShape: (onLeft === onTop) ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+
+                onPressed: {
+                    const p = backend.cursorPos();
+                    sx = p.x;
+                    sy = p.y;
+                    ox = win.x;
+                    oy = win.y;
+                    ow = win.curW;
+                    oh = win.curH;
+                }
+
+                onPositionChanged: {
+                    if (!pressed) return;
+                    const p = backend.cursorPos();
+                    const dx = p.x - sx;
+                    const dy = p.y - sy;
+                    const nw = Math.max(420, Math.min(onLeft ? ow - dx : ow + dx, win.screen.width - 20));
+                    const nh = Math.max(90, Math.min(onTop ? oh - dy : oh + dy, win.screen.height - 40));
+                    win.curW = nw;
+                    win.curH = nh;
+                    win.x = onLeft ? ox + (ow - nw) : ox;
+                    win.y = onTop ? oy + (oh - nh) : oy;
+                }
+
+                onReleased: backend.setStyleSize(win.curW, win.curH)
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 8
+                    height: 8
+                    radius: 4
+                    visible: grip.containsMouse || grip.pressed
+                    color: Qt.alpha(win.lineDim(), 0.7)
+                }
+            }
+        }
+
         Item {
             id: handle
             width: 160
@@ -204,7 +278,8 @@ Window {
             height: 28
             anchors.top: parent.top
             anchors.right: parent.right
-            anchors.margins: 6
+            anchors.topMargin: 6
+            anchors.rightMargin: 16
 
             Text {
                 anchors.centerIn: parent
