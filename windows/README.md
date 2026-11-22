@@ -30,6 +30,12 @@ Manual install instead:
 
 Double-click `run.bat`, or run `py lyricswidget.py` to keep a console open and see errors. Play a song and the pill appears at the bottom of the screen, with a tray icon.
 
+## Update
+
+    git pull
+
+Then quit from the shortcut and again Double-click `run.bat`, or run `py lyricswidget.py`
+
 ## Hotkeys
 
 | Keys | Action |
