@@ -33,6 +33,8 @@ ShellRoot {
     property string styleLine: ""
     property real styleAlpha: 0.85
     property real styleScale: 1.0
+    property real pillW: 760
+    property real pillH: 150
     readonly property var bgSwatches: ["", "#0B0B10", "#1B1410", "#16213E", "#1F2A1F", "#2B1B2E", "#3B1F1F", "#2B2B2B", "#FFFFFF"]
     readonly property var lineSwatches: ["", "#FFFFFF", "#E9D5BF", "#FFD166", "#FF8FA3", "#B39DDB", "#80DEEA", "#A5D6A7", "#FFAB91"]
     readonly property var sliderDefs: [
@@ -66,6 +68,8 @@ ShellRoot {
                 if (s.line !== undefined) root.styleLine = s.line;
                 if (s.alpha !== undefined) root.styleAlpha = s.alpha;
                 if (s.scale !== undefined) root.styleScale = s.scale;
+                if (s.w !== undefined) root.pillW = s.w;
+                if (s.h !== undefined) root.pillH = s.h;
             } catch (e) {}
         }
     }
@@ -182,7 +186,7 @@ ShellRoot {
     }
 
     function saveStyle() {
-        const data = JSON.stringify({ bg: styleBg, line: styleLine, alpha: styleAlpha, scale: styleScale });
+        const data = JSON.stringify({ bg: styleBg, line: styleLine, alpha: styleAlpha, scale: styleScale, w: pillW, h: pillH });
         styleSaveProc.running = false;
         styleSaveProc.command = ["sh", "-c", 'mkdir -p "$HOME/.config/lyrics-widget" && printf "%s" "$1" > "$HOME/.config/lyrics-widget/style.json"', "sh", data];
         styleSaveProc.running = true;
@@ -201,6 +205,8 @@ ShellRoot {
         styleLine = "";
         styleAlpha = 0.85;
         styleScale = 1.0;
+        pillW = 760;
+        pillH = 150;
         styleSaveTimer.restart();
     }
 
@@ -392,8 +398,8 @@ ShellRoot {
 
         Rectangle {
             id: pill
-            width: 760
-            height: 150
+            width: root.pillW
+            height: root.pillH
             x: (win.width - width) / 2
             y: win.height - height - 60
             radius: 22
@@ -483,6 +489,64 @@ ShellRoot {
                 color: Qt.alpha(root.lineDim(), 0.5)
             }
 
+            Repeater {
+                model: ["tl", "tr", "bl", "br"]
+
+                delegate: MouseArea {
+                    id: grip
+                    readonly property bool onLeft: modelData.charAt(1) === "l"
+                    readonly property bool onTop: modelData.charAt(0) === "t"
+                    property real sx: 0
+                    property real sy: 0
+                    property real ox: 0
+                    property real oy: 0
+                    property real ow: 0
+                    property real oh: 0
+                    width: 16
+                    height: 16
+                    x: onLeft ? 0 : pill.width - width
+                    y: onTop ? 0 : pill.height - height
+                    hoverEnabled: true
+                    cursorShape: (onLeft === onTop) ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+
+                    onPressed: (mouse) => {
+                        const g = grip.mapToItem(null, mouse.x, mouse.y);
+                        sx = g.x;
+                        sy = g.y;
+                        pill.x = pill.x;
+                        pill.y = pill.y;
+                        ox = pill.x;
+                        oy = pill.y;
+                        ow = root.pillW;
+                        oh = root.pillH;
+                    }
+
+                    onPositionChanged: (mouse) => {
+                        if (!pressed) return;
+                        const g = grip.mapToItem(null, mouse.x, mouse.y);
+                        const dx = g.x - sx;
+                        const dy = g.y - sy;
+                        const nw = Math.max(420, Math.min(onLeft ? ow - dx : ow + dx, win.width - 20));
+                        const nh = Math.max(90, Math.min(onTop ? oh - dy : oh + dy, win.height - 20));
+                        root.pillW = nw;
+                        root.pillH = nh;
+                        pill.x = onLeft ? ox + (ow - nw) : ox;
+                        pill.y = onTop ? oy + (oh - nh) : oy;
+                    }
+
+                    onReleased: styleSaveTimer.restart()
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 8
+                        height: 8
+                        radius: 4
+                        visible: grip.containsMouse || grip.pressed
+                        color: Qt.alpha(root.lineDim(), 0.7)
+                    }
+                }
+            }
+
             Item {
                 id: handle
                 width: 160
@@ -519,7 +583,8 @@ ShellRoot {
                 height: 28
                 anchors.top: parent.top
                 anchors.right: parent.right
-                anchors.margins: 6
+                anchors.topMargin: 6
+                anchors.rightMargin: 16
 
                 Text {
                     anchors.centerIn: parent
@@ -635,7 +700,11 @@ ShellRoot {
 
                 function submit() {
                     const q = searchInput.text.trim();
-                    if (q !== "") root.search(q);
+                    if (q !== "") {
+                        root.customQuery = q;
+                        root.autoOpen = true;
+                        root.fetchLyrics(true);
+                    }
                 }
 
                 Connections {
