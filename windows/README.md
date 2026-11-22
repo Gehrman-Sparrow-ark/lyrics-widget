@@ -32,6 +32,8 @@ Double-click `run.bat`, or run `py lyricswidget.py` to keep a console open and s
 
 ## Update
 
+Open cmd or powershell from lyrics-widget\windows or run.bat file location
+
     git pull
 
 Then quit from the shortcut and again Double-click `run.bat`, or run `py lyricswidget.py`
