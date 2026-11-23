@@ -1,4 +1,5 @@
 @echo off
+setlocal
 cd /d "%~dp0"
 where py >nul 2>nul
 if errorlevel 1 (
@@ -17,8 +18,13 @@ if errorlevel 1 (
 echo.
 set /p AUTOSTART=Start Lyrics Widget automatically with Windows? (y/n): 
 if /i "%AUTOSTART%"=="y" (
-    powershell -NoProfile -Command "$ws=New-Object -ComObject WScript.Shell; $l=$ws.CreateShortcut($env:APPDATA+'\Microsoft\Windows\Start Menu\Programs\Startup\Lyrics Widget.lnk'); $l.TargetPath='%~dp0run.bat'; $l.WorkingDirectory='%~dp0'; $l.WindowStyle=7; $l.Save()"
-    echo Autostart added.
+    set "LW_DIR=%~dp0"
+    powershell -NoProfile -Command "$ws=New-Object -ComObject WScript.Shell; $l=$ws.CreateShortcut((Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\Lyrics Widget.lnk')); $l.TargetPath=(Join-Path $env:LW_DIR 'run.bat'); $l.WorkingDirectory=$env:LW_DIR; $l.WindowStyle=7; $l.Save()"
+    if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Lyrics Widget.lnk" (
+        echo Autostart added.
+    ) else (
+        echo Could not create the autostart shortcut. Press Win+R, type shell:startup and put a shortcut to run.bat there.
+    )
 )
 echo.
 echo Done. Start the widget with run.bat

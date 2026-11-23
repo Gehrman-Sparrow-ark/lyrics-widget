@@ -127,22 +127,7 @@ def load_style():
     style = dict(STYLE_DEFAULT)
     try:
         data = json.loads((STATE_DIR / "style.json").read_text(encoding="utf-8"))
-        for k in style:
-            if k in data:
-                style[k] = data[k]
-    except Exception:
-        pass
-    return style
-
-
-STYLE_DEFAULT = {"bg": "", "line": "", "alpha": 0.85, "scale": 1.0}
-
-
-def load_style():
-    style = dict(STYLE_DEFAULT)
-    try:
-        data = json.loads((STATE_DIR / "style.json").read_text(encoding="utf-8"))
-        for k in style:
+        for k in ("bg", "line", "alpha", "scale", "w", "h"):
             if k in data:
                 style[k] = data[k]
     except Exception:
@@ -176,7 +161,6 @@ class Backend(QObject):
     busyChanged = Signal()
     paletteChanged = Signal()
     styleChanged = Signal()
-    styleChanged = Signal()
 
     sigMedia = Signal(bool, str, str, float, float, bool)
     sigLocal = Signal(int, object)
@@ -196,7 +180,6 @@ class Backend(QObject):
     busy = Property(bool, *_prop("busy"), notify=busyChanged)
     palette = Property("QVariantMap", *_prop("palette"), notify=paletteChanged)
     style = Property("QVariantMap", *_prop("style"), notify=styleChanged)
-    style = Property("QVariantMap", *_prop("style"), notify=styleChanged)
 
     def __init__(self):
         super().__init__()
@@ -214,11 +197,11 @@ class Backend(QObject):
         self._palette = load_palette()
         self._style = load_style()
         self.window = None
-        self._style = load_style()
-        self.window = None
 
         self.title = ""
         self.artist = ""
+        self.lyrArtist = ""
+        self.lyrTitle = ""
         self.length = 0.0
         self.playing = False
         self.posRef = 0.0
@@ -249,11 +232,6 @@ class Backend(QObject):
         self.saveTimer.setSingleShot(True)
         self.saveTimer.setInterval(700)
         self.saveTimer.timeout.connect(self.saveCurrent)
-
-        self.styleTimer = QTimer(self)
-        self.styleTimer.setSingleShot(True)
-        self.styleTimer.setInterval(500)
-        self.styleTimer.timeout.connect(self.saveStyle)
 
         self.styleTimer = QTimer(self)
         self.styleTimer.setSingleShot(True)
@@ -293,6 +271,12 @@ class Backend(QObject):
         if not force:
             self.customQuery = ""
             self.pickerOpen = False
+            self.autoOpen = False
+        if self.saveTimer.isActive():
+            self.saveTimer.stop()
+            self.saveCurrent()
+        self.lyrArtist = self.artist
+        self.lyrTitle = self.title
         self.loadedKey = key
         self.gen += 1
         gen = self.gen
@@ -430,10 +414,10 @@ class Backend(QObject):
             self.saveCurrent()
 
     def saveCurrent(self):
-        if not self.rawLrc or not self.title:
+        if not self.rawLrc or not self.lyrTitle:
             return
         try:
-            save_lrc(self.artist, self.title, int(round(self._offset * 1000)), self.curPath, self.rawLrc)
+            save_lrc(self.lyrArtist, self.lyrTitle, int(round(self._offset * 1000)), self.curPath, self.rawLrc)
         except Exception:
             log.exception("saving lyrics failed")
 
@@ -445,6 +429,8 @@ class Backend(QObject):
     @Slot()
     def togglePicker(self):
         self.pickerOpen = not self._pickerOpen
+        if not self._pickerOpen:
+            self.autoOpen = False
         if self._pickerOpen and not self.onlineFinished and not self.onlineRunning and self.title:
             self.runOnline()
 
@@ -470,25 +456,6 @@ class Backend(QObject):
         self.autoOpen = True
         self.fetchLyrics(True)
 
-    def saveStyle(self):
-        try:
-            (STATE_DIR / "style.json").write_text(json.dumps(self._style), encoding="utf-8")
-        except Exception:
-            log.exception("saving style failed")
-
-    @Slot(str, str)
-    def setStyleColor(self, key, value):
-        s = dict(self._style)
-        s[key] = value
-        self.style = s
-        self.styleTimer.start()
-
-    @Slot(str, float)
-    def setStyleNumber(self, key, value):
-        s = dict(self._style)
-        s[key] = float(value)
-        self.style = s
-        self.styleTimer.start()
 
     @Slot(float, float)
     def setStyleSize(self, w, h):
@@ -498,39 +465,6 @@ class Backend(QObject):
         self.style = s
         self.styleTimer.start()
 
-    @Slot()
-    def resetStyle(self):
-        self.style = dict(STYLE_DEFAULT)
-        self.styleTimer.start()
-
-    @Slot(str)
-    def searchText(self, query):
-        query = query.strip()
-        if query:
-            self.search(query)
-
-    @Slot(bool)
-    def setFocusable(self, on):
-        """Let the widget take keyboard focus while the picker (with its search box) is open."""
-        try:
-            if self.window is None:
-                return
-            user32 = ctypes.windll.user32
-            get = user32.GetWindowLongPtrW
-            put = user32.SetWindowLongPtrW
-            get.restype = ctypes.c_ssize_t
-            get.argtypes = [wintypes.HWND, ctypes.c_int]
-            put.restype = ctypes.c_ssize_t
-            put.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
-            hwnd = int(self.window.winId())
-            GWL_EXSTYLE, WS_EX_NOACTIVATE = -20, 0x08000000
-            ex = get(hwnd, GWL_EXSTYLE)
-            ex = (ex & ~WS_EX_NOACTIVATE) if on else (ex | WS_EX_NOACTIVATE)
-            put(hwnd, GWL_EXSTYLE, ex)
-            if on:
-                self.window.requestActivate()
-        except Exception:
-            log.exception("setFocusable failed")
 
     def saveStyle(self):
         try:
@@ -560,14 +494,16 @@ class Backend(QObject):
     @Slot(str)
     def searchText(self, query):
         query = query.strip()
+        log.info("search submitted: %r", query)
         if query:
             self.search(query)
 
     @Slot(bool)
     def setFocusable(self, on):
-        """Let the widget take keyboard focus while the picker (with its search box) is open."""
+        """Let the widget take keyboard focus only while the picker (with its search box) is open."""
         try:
             if self.window is None:
+                log.warning("setFocusable: no window yet")
                 return
             user32 = ctypes.windll.user32
             get = user32.GetWindowLongPtrW
@@ -582,7 +518,9 @@ class Backend(QObject):
             ex = (ex & ~WS_EX_NOACTIVATE) if on else (ex | WS_EX_NOACTIVATE)
             put(hwnd, GWL_EXSTYLE, ex)
             if on:
+                user32.SetForegroundWindow(wintypes.HWND(hwnd))
                 self.window.requestActivate()
+            log.info("focusable=%s", on)
         except Exception:
             log.exception("setFocusable failed")
 
@@ -726,7 +664,7 @@ def main():
         log.error("main.qml failed to load")
         return 1
     backend.window = engine.rootObjects()[0]
-    backend.window = engine.rootObjects()[0]
+    QTimer.singleShot(800, lambda: backend.setFocusable(False))
 
     tray = QSystemTrayIcon(make_icon(), app)
     tray.setToolTip("Lyrics Widget")

@@ -235,7 +235,7 @@ def local_score(stem, pairs, raw_title):
     return best
 
 
-def local_candidates(pairs, raw_title):
+def local_candidates(pairs, raw_title, query=""):
     out = []
     for root, _, files in os.walk(LYR_DIR):
         for f in files:
@@ -244,6 +244,8 @@ def local_candidates(pairs, raw_title):
             path = os.path.join(root, f)
             stem = fix(os.path.splitext(f)[0])
             sc = local_score(stem, pairs, raw_title)
+            if query:
+                sc = max(sc, query_score("", stem, query))
             if sc < 0.75:
                 continue
             try:
@@ -265,6 +267,30 @@ def pair_score(c_artist, c_title, pairs):
         s = 0.75 * ts + 0.25 * sim(ar, c_artist) if ar else 0.9 * ts
         best = max(best, s)
     return best
+
+
+def _tokens(s):
+    out = []
+    for t in re.findall(r"\w+", unicodedata.normalize("NFKC", fix(s or "")).casefold()):
+        if len(t) >= 2 or ord(t[0]) > 127:
+            out.append(t)
+    return out
+
+
+def query_score(c_artist, c_title, query):
+    cn = norm(c_artist + " " + c_title)
+    qn = norm(query)
+    if not cn or not qn:
+        return 0.0
+    if cn == qn:
+        return 1.0
+    ratio = SequenceMatcher(None, qn, cn).ratio()
+    qt, tt = _tokens(query), _tokens(c_title)
+    if not qt or not tt:
+        return ratio
+    c1 = sum(len(t) for t in qt if norm(t) in cn) / float(sum(len(t) for t in qt))
+    c2 = sum(len(t) for t in tt if norm(t) in qn) / float(sum(len(t) for t in tt))
+    return max(0.6 * c1 + 0.4 * c2, ratio)
 
 
 def dur_factor(c_dur, length):
@@ -301,7 +327,7 @@ def main():
         pairs, raw_title = build_pairs(title, artist), title
     kws = build_keywords(pairs)
 
-    cands = [] if args.online_only else local_candidates(pairs, raw_title)
+    cands = [] if args.online_only else local_candidates(pairs, raw_title, query)
     if args.local_only:
         cands.sort(key=lambda c: -c["score"])
         sys.stdout.write(json.dumps({"candidates": cands[:14]}))
@@ -317,7 +343,8 @@ def main():
                 pass
 
     for m in metas:
-        m["score"] = pair_score(m["artist"], m["title"], pairs) * (0.5 + 0.5 * dur_factor(m["duration"], length))
+        base = query_score(m["artist"], m["title"], query) if query else pair_score(m["artist"], m["title"], pairs)
+        m["score"] = base * (0.5 + 0.5 * dur_factor(m["duration"], length))
     if args.debug:
         sys.stderr.write("pairs: %r\nkeywords: %r\nlength: %r\nnetwork errors: %d\nraw hits: %d\n"
                          % (pairs, kws, length, NET_ERRORS[0], len(metas)))

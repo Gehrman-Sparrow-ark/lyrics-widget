@@ -1,6 +1,6 @@
 # Maintainer: Gehrman-Sparrow-ark
 pkgname=lyrics-widget
-pkgver=1.3.0
+pkgver=1.3.1
 pkgrel=1
 pkgdesc='Floating synced-lyrics widget for Quickshell (MPRIS, LRCLIB, Kugou, NetEase)'
 arch=('any')

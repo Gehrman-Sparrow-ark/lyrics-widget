@@ -46,9 +46,10 @@ Window {
     }
 
     title: "Lyrics"
-    flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WindowDoesNotAcceptFocus
+    flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
     color: "transparent"
     visible: backend.shown && backend.hasPlayer
+    onVisibleChanged: if (visible && !backend.pickerOpen) backend.setFocusable(false)
     width: curW
     height: curH + (popupOpen ? gap + popupH : 0)
     x: (Screen.width - width) / 2

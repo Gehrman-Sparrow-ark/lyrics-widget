@@ -24,6 +24,8 @@ ShellRoot {
     property bool styleOpen: false
     property bool autoOpen: false
     property string customQuery: ""
+    property string lyrArtist: ""
+    property string lyrTitle: ""
     property bool busy: false
     property bool onlineDone: false
     property var localCands: []
@@ -225,7 +227,10 @@ ShellRoot {
         if (!title) return;
         const key = artist + "|" + title;
         if (!force && key === loadedKey) return;
-        if (!force) { customQuery = ""; pickerOpen = false; }
+        if (saveTimer.running) { saveTimer.stop(); saveCurrent(); }
+        if (!force) { customQuery = ""; pickerOpen = false; autoOpen = false; }
+        lyrArtist = artist;
+        lyrTitle = title;
         loadedKey = key;
         lines = [];
         idx = -1;
@@ -296,7 +301,13 @@ ShellRoot {
     function togglePicker() {
         styleOpen = false;
         pickerOpen = !pickerOpen;
+        if (!pickerOpen) autoOpen = false;
         if (pickerOpen && !onlineDone && !onlineProc.running && title) runOnline();
+    }
+
+    function closePicker() {
+        autoOpen = false;
+        pickerOpen = false;
     }
 
     function toggleStyle() {
@@ -326,9 +337,9 @@ ShellRoot {
     }
 
     function saveCurrent() {
-        if (rawLrc === "" || !title) return;
+        if (rawLrc === "" || !lyrTitle) return;
         saveProc.running = false;
-        saveProc.command = [home + "/.local/bin/lyrsave", artist, title,
+        saveProc.command = [home + "/.local/bin/lyrsave", lyrArtist, lyrTitle,
                             String(Math.round(offset * 1000)), curPath, rawLrc];
         saveProc.running = true;
     }
@@ -688,7 +699,7 @@ ShellRoot {
             width: pill.width
             height: 300
             x: pill.x
-            y: (pill.y - height - 10 >= 0) ? pill.y - height - 10 : pill.y + pill.height + 10
+            y: Math.max(0, Math.min(win.height - height, (pill.y - height - 10 >= 0) ? pill.y - height - 10 : pill.y + pill.height + 10))
             radius: 22
             clip: true
             color: Qt.alpha(root.bgColor(), Math.min(1, root.styleAlpha + 0.1))
@@ -743,7 +754,7 @@ ShellRoot {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.pickerOpen = false
+                        onClicked: root.closePicker()
                     }
                 }
 
@@ -828,7 +839,7 @@ ShellRoot {
                         selectionColor: root.c("primary", "#E9D5BF")
                         selectedTextColor: root.c("surface_container", "#1b1410")
                         onAccepted: pickerView.submit()
-                        Keys.onEscapePressed: root.pickerOpen = false
+                        Keys.onEscapePressed: root.closePicker()
                     }
 
                     Text {
