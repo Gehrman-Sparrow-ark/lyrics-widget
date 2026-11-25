@@ -12,11 +12,11 @@ A floating synced-lyrics pill that follows whatever you play (Spotify, YouTube M
 Download the ZIP of a release (it never changes after publishing):
 [v1.3.2-1](https://github.com/Gehrman-Sparrow-ark/lyrics-widget/archive/refs/tags/v1.3.2-1.zip).
 Or clone the repository: `git clone https://github.com/Gehrman-Sparrow-ark/lyrics-widget.git`. Extract or clone to a normal local folder and open its `windows` subfolder.
+The tagged ZIP keeps its original installer; the automatic pip repair described below applies to the updated installer.
 
-Double-click `install.bat` or run it in Command Prompt. It uses a private `.venv` in this copy, installs only the pinned and hash-checked wheels, runs dependency and import checks, and then asks whether to start the widget with Windows. If you say Yes, it saves a shortcut in your per-user Startup folder and reads back the target, working directory and arguments. To skip that prompt and never change Startup, run:
+Double-click `install.bat` or run it in Command Prompt. It uses a private `.venv` in this copy, repairs missing pip in an otherwise compatible environment, installs the pinned and hash-checked widget dependencies, runs dependency and import checks, and then asks whether to start the widget with Windows. If you say Yes, it saves a shortcut in your per-user Startup folder and reads back the target, working directory and arguments. To skip that prompt and never change Startup, run:
 
 ```bat
-.venv\Scripts\python.exe -I -m ensurepip --upgrade
 install.bat --no-autostart
 ```
 
@@ -24,7 +24,7 @@ If Windows or your organization blocks the installer, stop. Verify the ZIP sourc
 
 ## Run
 
-Double-click `run.bat`, or run it from Command Prompt. It uses this copy's virtual environment and keeps a console available to show startup errors. Play a song in an app that reports to Windows media controls. If the widget starts, its tray icon gives access to the picker and Quit.
+After setup prints `Dependencies installed in .venv`, double-click `run.bat` or run it from Command Prompt. It uses this copy's virtual environment and keeps a console available to show startup errors. Play a song in an app that reports to Windows media controls. If the widget starts, its tray icon gives access to the picker and Quit.
 
 ```bat
 .venv\Scripts\python.exe lyricswidget.py
@@ -32,7 +32,7 @@ Double-click `run.bat`, or run it from Command Prompt. It uses this copy's virtu
 
 ## Update
 
-Quit with the widget's tray menu before updating. For a ZIP, extract the newer release into a separate folder and run its `install.bat`, then re-enable autostart from that copy only if desired. For a Git clone, run `git pull` and rerun `install.bat` if `requirements.txt` changed. Do not overwrite an existing virtual environment or copy one between folders.
+Quit with the widget's tray menu before updating. For a ZIP, extract the newer release into a separate folder and run its `install.bat`, then re-enable autostart from that copy only if desired. For a Git clone, run `git pull` and rerun `install.bat` if `requirements.txt` or `install.bat` changed, or the launcher reports missing dependencies. Do not overwrite an existing virtual environment or copy one between folders.
 
 ## Hotkeys
 
@@ -67,12 +67,19 @@ Song titles and artists are sent to LRCLIB, Kugou and NetEase to find lyrics. Ku
 
 ## Troubleshooting
 
+- **`No module named PySide6` or PySide6 could not load:** open Command Prompt in the `windows` folder and run `install.bat --no-autostart`. Start `run.bat` only after setup succeeds.
+- **`No module named pip` on an older installer:** if `.venv\Scripts\python.exe` exists, run `.venv\Scripts\python.exe -I -m ensurepip --upgrade`, then rerun `install.bat --no-autostart`. Fresh installs do not need this manual step.
+- **Incomplete or incompatible `.venv`:** if setup cannot repair it, close the widget, rename `.venv` to an unused name such as `.venv-broken`, then rerun `install.bat --no-autostart`. Your saved lyrics and settings are outside `.venv`. If setup fails again, keep the first error message.
+
 - **Black box instead of a see-through pill:** report your Windows build, GPU and the exact error or log; do not change Windows security settings.
 - **Nothing appears:** read the log: `type %LOCALAPPDATA%\lyrics-widget\lyrics-widget.log`
 - **A hotkey does nothing:** another program already uses it, and the log says so. Change it in `HOTKEYS`.
 - **No lyrics for a song:** use the picker's search box, or open `Music\Lyrics` and add an `.lrc` file named like the song.
 - **Chinese, Japanese or Korean lyrics show as boxes:** install a CJK font such as Noto Sans CJK.
 
+## Uninstall
+
+Quit the widget, open `shell:startup` and remove the Lyrics Widget shortcut if you created one, then remove the widget folder if no longer needed. This removes only this copy's `.venv`; do not uninstall packages from your global Python. Your lyrics in `Music\Lyrics` and local preferences are stored separately.
 ## Uninstall
 
 Quit the widget, open `shell:startup` and remove the Lyrics Widget shortcut if you created one, then remove the widget folder if no longer needed. This removes only this copy's `.venv`; do not uninstall packages from your global Python. Your lyrics in `Music\Lyrics` and local preferences are stored separately.
