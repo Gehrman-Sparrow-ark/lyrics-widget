@@ -31,6 +31,16 @@ if errorlevel 1 goto failed
 "%LW_PY%" -I -c "%PYCHECK%" >nul 2>&1 || goto invalid_venv
 "%LW_PY%" -I -c "import sys; sys.exit(sys.prefix == sys.base_prefix)" >nul 2>&1 || goto invalid_venv
 if not exist ".venv\Scripts\pythonw.exe" goto invalid_venv
+rem Repair a compatible virtual environment left without pip.
+"%LW_PY%" -I -m pip --version >nul 2>&1
+if not errorlevel 1 goto install_dependencies
+echo pip is missing or unusable. Repairing pip in .venv...
+"%LW_PY%" -I -m ensurepip --upgrade
+if errorlevel 1 goto invalid_venv
+"%LW_PY%" -I -m pip --version >nul 2>&1
+if errorlevel 1 goto invalid_venv
+
+:install_dependencies
 "%LW_PY%" -I -m pip --isolated --disable-pip-version-check install --require-hashes --only-binary=:all: -r requirements.txt
 if errorlevel 1 goto failed
 "%LW_PY%" -I -m pip --isolated --disable-pip-version-check check
