@@ -23,7 +23,7 @@ from pathlib import Path
 # Delete this line to try GPU rendering instead.
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
-from PySide6.QtCore import QDir, QLockFile, QObject, Property, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QDir, QLockFile, QObject, QPoint, Property, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPixmap
 from PySide6.QtCore import Qt
 from PySide6.QtQml import QQmlApplicationEngine
@@ -520,6 +520,15 @@ class Backend(QObject):
     @Slot(str)
     def searchText(self, query):
         self.search(query)
+
+    @Slot(int, int, result="QVariant")
+    def screenWorkArea(self, x, y):
+        screen = QApplication.screenAt(QPoint(x, y)) or QApplication.primaryScreen()
+        if screen is None:
+            return {}
+        area = screen.availableGeometry()
+        return {"top": area.y(), "height": area.height()}
+
 
     @Slot(result="QVariant")
     def cursorPos(self):
