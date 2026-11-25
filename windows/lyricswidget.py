@@ -32,6 +32,7 @@ from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QSystemTrayIcon
 APP_DIR = Path(__file__).resolve().parent
 LYR_DIR = Path.home() / "Music" / "Lyrics"
 LYRSEARCH = APP_DIR / "lyrsearch.py"
+DISPLAY_LEAD = 0.15
 STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "lyrics-widget"
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -158,6 +159,7 @@ class Backend(QObject):
     candsChanged = Signal()
     curIndexChanged = Signal()
     pickerOpenChanged = Signal()
+    searchQueryChanged = Signal()
     busyChanged = Signal()
     paletteChanged = Signal()
     styleChanged = Signal()
@@ -177,6 +179,7 @@ class Backend(QObject):
     cands = Property("QVariantList", *_prop("cands"), notify=candsChanged)
     curIndex = Property(int, *_prop("curIndex"), notify=curIndexChanged)
     pickerOpen = Property(bool, *_prop("pickerOpen"), notify=pickerOpenChanged)
+    searchQuery = Property(str, *_prop("searchQuery"), notify=searchQueryChanged)
     busy = Property(bool, *_prop("busy"), notify=busyChanged)
     palette = Property("QVariantMap", *_prop("palette"), notify=paletteChanged)
     style = Property("QVariantMap", *_prop("style"), notify=styleChanged)
@@ -193,10 +196,10 @@ class Backend(QObject):
         self._cands = []
         self._curIndex = -1
         self._pickerOpen = False
+        self._searchQuery = ""
         self._busy = False
         self._palette = load_palette()
         self._style = load_style()
-        self.window = None
 
         self.title = ""
         self.artist = ""
@@ -209,8 +212,7 @@ class Backend(QObject):
         self.loadedKey = ""
         self.rawLrc = ""
         self.curPath = ""
-        self.customQuery = ""
-        self.autoOpen = False
+        self.localRunning = False
         self.localCands = []
         self.onlineCands = []
         self.onlineFinished = False
@@ -245,8 +247,9 @@ class Backend(QObject):
     def tick(self):
         if not self.times:
             return
-        p = self.curPos() + 0.15 + self._offset
-        self.idx = bisect.bisect_right(self.times, p) - 1
+        p = self.curPos() + DISPLAY_LEAD + self._offset
+        # Exact click-to-sync can land one floating-point step before the line.
+        self.idx = bisect.bisect_right(self.times, p + 1e-8) - 1
 
     # ---- media updates (from the poller thread) ----
     @Slot(bool, str, str, float, float, bool)
@@ -262,19 +265,16 @@ class Backend(QObject):
             self.fetchLyrics(False)
 
     # ---- searching ----
-    def fetchLyrics(self, force):
+    def fetchLyrics(self, force, query=""):
         if not self.title:
             return
         key = self.artist + "|" + self.title
         if not force and key == self.loadedKey:
             return
         if not force:
-            self.customQuery = ""
             self.pickerOpen = False
-            self.autoOpen = False
-        if self.saveTimer.isActive():
-            self.saveTimer.stop()
-            self.saveCurrent()
+        self.flushPendingLyrics()
+        self.searchQuery = query
         self.lyrArtist = self.artist
         self.lyrTitle = self.title
         self.loadedKey = key
@@ -291,10 +291,13 @@ class Backend(QObject):
         self.curPath = ""
         self.srcLabel = ""
         self.offset = 0.0
+        self.localRunning = True
         self.onlineFinished = False
         self.onlineRunning = False
         self.busy = True
         self.status = "checking local files…"
+        if query:
+            self.pickerOpen = True
         self.spawn("--local-only", gen)
         QTimer.singleShot(30000, lambda g=gen: self.watchdog(g))
 
@@ -302,13 +305,14 @@ class Backend(QObject):
         if gen != self.gen or not self._busy:
             return
         self.gen += 1
+        self.localRunning = False
         self.onlineRunning = False
         self.busy = False
         if not self._lines:
             self.status = "search timed out, press ↻ to retry"
 
     def spawn(self, mode, gen):
-        args = (mode, self.title, self.artist, self.length, self.customQuery, gen)
+        args = (mode, self.title, self.artist, self.length, self._searchQuery, gen)
         threading.Thread(target=self.runSearch, args=args, daemon=True).start()
 
     def runSearch(self, mode, title, artist, length, query, gen):
@@ -341,7 +345,7 @@ class Backend(QObject):
             self.sigOnline.emit(gen, res)
 
     def runOnline(self):
-        if self.onlineRunning or not self.title:
+        if self.localRunning or self.onlineRunning or self.onlineFinished or not self.title:
             return
         self.onlineRunning = True
         self.busy = True
@@ -356,12 +360,13 @@ class Backend(QObject):
     def onLocal(self, gen, res):
         if gen != self.gen:
             return
+        self.localRunning = False
         self.localCands = (res or {}).get("candidates", [])
         self.rebuild()
-        if self.localCands and self.customQuery == "":
+        if self.localCands and not self._searchQuery:
             self.applyCandidate(0, False)
             self.busy = self.onlineRunning
-            if self.autoOpen:
+            if self._pickerOpen:
                 self.runOnline()
             return
         self.runOnline()
@@ -373,8 +378,6 @@ class Backend(QObject):
         self.onlineRunning = False
         self.onlineCands = (res or {}).get("candidates", [])
         self.rebuild()
-        opened = self.autoOpen
-        self.autoOpen = False
         self.onlineFinished = True
         self.busy = False
         if not self._lines:
@@ -385,21 +388,20 @@ class Backend(QObject):
                     self.status = "couldn't reach the lyric sources, press ↻ to retry"
                 else:
                     self.status = "no lyrics found, press ↻ to retry"
-            elif self.customQuery == "" and self._cands[0].get("score", 0) >= 0.55:
+            elif not self._searchQuery and self._cands[0].get("score", 0) >= 0.55:
                 self.applyCandidate(0, False)
             else:
                 self.status = "%d possible matches, ☰ to choose" % len(self._cands)
-        if opened:
-            self.pickerOpen = True
 
     def applyCandidate(self, i, save):
         if i < 0 or i >= len(self._cands):
-            return
+            return False
         cd = self._cands[i]
         parsed, off_ms = parse_lrc(cd.get("lrc", ""))
         if not parsed:
             self.status = "that file has no timestamps"
-            return
+            return False
+        self.flushPendingLyrics()
         self.curIndex = i
         self.times = [t for t, _ in parsed]
         self.lines = [{"t": t, "text": x} for t, x in parsed]
@@ -412,6 +414,7 @@ class Backend(QObject):
         self.idx = -1
         if save:
             self.saveCurrent()
+        return True
 
     def saveCurrent(self):
         if not self.rawLrc or not self.lyrTitle:
@@ -421,29 +424,42 @@ class Backend(QObject):
         except Exception:
             log.exception("saving lyrics failed")
 
+    def flushPendingLyrics(self):
+        if self.saveTimer.isActive():
+            self.saveTimer.stop()
+            self.saveCurrent()
+
+    @Slot()
+    def flushPendingSaves(self):
+        self.flushPendingLyrics()
+        if self.styleTimer.isActive():
+            self.styleTimer.stop()
+            self.saveStyle()
+
     # ---- slots used by the QML ----
     @Slot()
     def reload(self):
-        self.fetchLyrics(True)
+        if self._hasPlayer:
+            self.fetchLyrics(True)
 
     @Slot()
     def togglePicker(self):
+        if not self._pickerOpen and not self._hasPlayer:
+            return
         self.pickerOpen = not self._pickerOpen
-        if not self._pickerOpen:
-            self.autoOpen = False
-        if self._pickerOpen and not self.onlineFinished and not self.onlineRunning and self.title:
+        if self._pickerOpen:
             self.runOnline()
 
     @Slot(int)
     def pick(self, i):
-        self.applyCandidate(i, True)
-        self.pickerOpen = False
+        if self.applyCandidate(i, True):
+            self.pickerOpen = False
 
     @Slot(int)
     def syncTo(self, i):
         if i < 0 or i >= len(self._lines):
             return
-        self.offset = self._lines[i]["t"] - self.curPos() + 0.15
+        self.offset = self._lines[i]["t"] - (self.curPos() + DISPLAY_LEAD)
         self.idx = i
         self.saveTimer.start()
 
@@ -452,9 +468,19 @@ class Backend(QObject):
         self.saveTimer.start()
 
     def search(self, query):
-        self.customQuery = query
-        self.autoOpen = True
-        self.fetchLyrics(True)
+        query = query.strip()
+        if not query:
+            # An empty box means "go back to automatic matching".
+            if self._searchQuery:
+                self.autoSearch()
+            return
+        if self._hasPlayer and self.title:
+            self.fetchLyrics(True, query)
+
+    @Slot()
+    def autoSearch(self):
+        if self._hasPlayer:
+            self.fetchLyrics(True)
 
 
     @Slot(float, float)
@@ -493,36 +519,7 @@ class Backend(QObject):
 
     @Slot(str)
     def searchText(self, query):
-        query = query.strip()
-        log.info("search submitted: %r", query)
-        if query:
-            self.search(query)
-
-    @Slot(bool)
-    def setFocusable(self, on):
-        """Let the widget take keyboard focus only while the picker (with its search box) is open."""
-        try:
-            if self.window is None:
-                log.warning("setFocusable: no window yet")
-                return
-            user32 = ctypes.windll.user32
-            get = user32.GetWindowLongPtrW
-            put = user32.SetWindowLongPtrW
-            get.restype = ctypes.c_ssize_t
-            get.argtypes = [wintypes.HWND, ctypes.c_int]
-            put.restype = ctypes.c_ssize_t
-            put.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
-            hwnd = int(self.window.winId())
-            GWL_EXSTYLE, WS_EX_NOACTIVATE = -20, 0x08000000
-            ex = get(hwnd, GWL_EXSTYLE)
-            ex = (ex & ~WS_EX_NOACTIVATE) if on else (ex | WS_EX_NOACTIVATE)
-            put(hwnd, GWL_EXSTYLE, ex)
-            if on:
-                user32.SetForegroundWindow(wintypes.HWND(hwnd))
-                self.window.requestActivate()
-            log.info("focusable=%s", on)
-        except Exception:
-            log.exception("setFocusable failed")
+        self.search(query)
 
     @Slot(result="QVariant")
     def cursorPos(self):
@@ -537,7 +534,7 @@ class Backend(QObject):
             self.shown = True
             self.togglePicker()
         elif name == "reload":
-            self.fetchLyrics(True)
+            self.reload()
         elif name == "earlier":
             self.nudge(0.5)
         elif name == "later":
@@ -663,8 +660,7 @@ def main():
     if not engine.rootObjects():
         log.error("main.qml failed to load")
         return 1
-    backend.window = engine.rootObjects()[0]
-    QTimer.singleShot(800, lambda: backend.setFocusable(False))
+    app.aboutToQuit.connect(backend.flushPendingSaves)
 
     tray = QSystemTrayIcon(make_icon(), app)
     tray.setToolTip("Lyrics Widget")
@@ -674,6 +670,10 @@ def main():
         menu.addAction(label).triggered.connect(lambda *_: fn())
 
     def search_by_hand():
+        if not backend.hasPlayer:
+            tray.showMessage("Lyrics Widget", "Play a song before looking up lyrics.",
+                             QSystemTrayIcon.MessageIcon.Information, 3000)
+            return
         text, ok = QInputDialog.getText(None, "Search lyrics", "Artist and title:")
         if ok and text.strip():
             backend.shown = True
@@ -699,7 +699,10 @@ def main():
     MediaPoller(backend).start()
     HotkeyThread(backend, HOTKEYS).start()
     log.info("started")
-    return app.exec()
+    exit_code = app.exec()
+    # Destroy QML bindings before their Python backend goes away.
+    del engine
+    return exit_code
 
 
 if __name__ == "__main__":

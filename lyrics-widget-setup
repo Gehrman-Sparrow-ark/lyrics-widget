@@ -16,6 +16,10 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+if [[ "$key" != [abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ] ]]; then
+    echo "--key must be one ASCII letter (A-Z)." >&2
+    exit 2
+fi
 key="${key^^}"
 
 qsdir="$HOME/.config/quickshell/lyrics"
@@ -24,7 +28,14 @@ QS="qs -p $qsdir"
 mkdir -p "$HOME/.config/quickshell" "$HOME/Music/Lyrics"
 [ -L "$qsdir" ] && rm "$qsdir"
 mkdir -p "$qsdir"
-cp -f /usr/share/lyrics-widget/shell.qml "$qsdir/shell.qml"
+source_qml="/usr/share/lyrics-widget/shell.qml"
+target_qml="$qsdir/shell.qml"
+if [ -e "$target_qml" ] && ! cmp -s "$source_qml" "$target_qml"; then
+    qml_backup=$(mktemp "$target_qml.bak.XXXXXX")
+    cp -- "$target_qml" "$qml_backup"
+    printf 'Saved the previous widget configuration: %s\n' "$qml_backup"
+fi
+cp -f -- "$source_qml" "$target_qml"
 echo "Installed the widget to $qsdir"
 
 if [ "$want_hypr" = 1 ]; then
@@ -52,7 +63,8 @@ if [ "$want_hypr" = 1 ]; then
             echo "Re-run with another key, e.g. lyrics-widget-setup --hyprland --key Y" >&2
             exit 1
         fi
-        cp "$cfg" "$cfg.lyrics-widget.bak"
+        cfg_backup=$(mktemp "$cfg.lyrics-widget.bak.XXXXXX")
+        cp -- "$cfg" "$cfg_backup"
         if [ "$mode" = lua ]; then
             {
                 echo ""
@@ -70,7 +82,7 @@ if [ "$want_hypr" = 1 ]; then
                 echo "bind = SUPER CTRL, $key, exec, sh -c '$QS ipc call lyrics toggle || $QS'"
             } >> "$cfg"
         fi
-        echo "Added autostart and SUPER+CTRL+$key to $cfg (backup: $cfg.lyrics-widget.bak)"
+        echo "Added autostart and SUPER+CTRL+$key to $cfg (backup: $cfg_backup)"
         echo "Log out and back in to load it."
     fi
 fi

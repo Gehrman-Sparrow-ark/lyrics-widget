@@ -342,9 +342,17 @@ def main():
             except Exception:
                 pass
 
+    def ranking_key(hit):
+        # An explicit query can be for another song; use the playing duration
+        # only to break equally relevant typed matches, not to reject them.
+        return (-hit["score"], -dur_factor(hit["duration"], length) if query else 0.0)
+
     for m in metas:
-        base = query_score(m["artist"], m["title"], query) if query else pair_score(m["artist"], m["title"], pairs)
-        m["score"] = base * (0.5 + 0.5 * dur_factor(m["duration"], length))
+        if query:
+            m["score"] = query_score(m["artist"], m["title"], query)
+        else:
+            base = pair_score(m["artist"], m["title"], pairs)
+            m["score"] = base * (0.5 + 0.5 * dur_factor(m["duration"], length))
     if args.debug:
         sys.stderr.write("pairs: %r\nkeywords: %r\nlength: %r\nnetwork errors: %d\nraw hits: %d\n"
                          % (pairs, kws, length, NET_ERRORS[0], len(metas)))
@@ -352,7 +360,7 @@ def main():
             sys.stderr.write("  %.2f  %s | %s - %s | %.0fs\n"
                              % (m["score"], m["source"], m["artist"], m["title"], m["duration"]))
     metas = [m for m in metas if m["score"] >= 0.3]
-    metas.sort(key=lambda m: -m["score"])
+    metas.sort(key=ranking_key)
 
     per, chosen = {}, []
     for m in metas:
@@ -370,7 +378,7 @@ def main():
         item["lrc"], item["path"] = lrc, ""
         cands.append(item)
 
-    cands.sort(key=lambda c: -c["score"])
+    cands.sort(key=ranking_key)
     cands = cands[:14]
     for c in cands:
         c["score"] = round(c["score"], 3)

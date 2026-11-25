@@ -8,6 +8,7 @@ ShellRoot {
     id: root
 
     readonly property string home: Quickshell.env("HOME")
+    readonly property real timingLead: 0.15
 
     property bool shown: true
     property var lines: []
@@ -26,6 +27,7 @@ ShellRoot {
     property string customQuery: ""
     property string lyrArtist: ""
     property string lyrTitle: ""
+    property var saveQueue: []
     property bool busy: false
     property bool onlineDone: false
     property var localCands: []
@@ -37,8 +39,11 @@ ShellRoot {
     property real styleScale: 1.0
     property real pillW: 760
     property real pillH: 150
+    // Unset coordinates use the default centered, bottom-aligned placement.
+    property real pillX: NaN
+    property real pillY: NaN
     readonly property var bgSwatches: ["", "#0B0B10", "#1B1410", "#16213E", "#1F2A1F", "#2B1B2E", "#3B1F1F", "#2B2B2B", "#FFFFFF"]
-    readonly property var lineSwatches: ["", "#FFFFFF", "#E9D5BF", "#FFD166", "#FF8FA3", "#B39DDB", "#80DEEA", "#A5D6A7", "#FFAB91"]
+    readonly property var lineSwatches: ["", "#FFFFFF", "#E9D5BF", "#FFD166", "#FF8FA3", "#B39DDB", "#80DEEA", "#A5D6A7", "#FFAB91", "#1B1410"]
     readonly property var sliderDefs: [
         { key: "alpha", label: "Transparency", min: 0, max: 0.8 },
         { key: "scale", label: "Text size", min: 0.7, max: 1.4 }
@@ -48,9 +53,17 @@ ShellRoot {
     function c(name, fallback) {
         return pal[name] !== undefined ? pal[name] : fallback;
     }
+    function uiInk(name, fallback) {
+        if (styleBg.toUpperCase() === "#FFFFFF") return name === "primary" ? "#4A3B30" : "#201710";
+        return c(name, fallback);
+    }
     function bgColor() { return styleBg !== "" ? styleBg : c("surface_container", "#1b1410"); }
-    function lineHi() { return styleLine !== "" ? styleLine : c("primary", "#E9D5BF"); }
-    function lineDim() { return styleLine !== "" ? styleLine : c("on_surface", "#E9D5BF"); }
+    function lineHi() { return styleLine !== "" ? styleLine : uiInk("primary", "#E9D5BF"); }
+    function lineDim() { return styleLine !== "" ? styleLine : uiInk("on_surface", "#E9D5BF"); }
+    function clamp(value, lo, hi) { return Math.max(lo, Math.min(value, hi)); }
+    function swatchSize(width, spacing, count) {
+        return clamp(Math.floor((width - spacing * (count - 1)) / count), 1, 28);
+    }
 
     FileView {
         path: Quickshell.env("HOME") + "/.local/state/quickshell/user/generated/colors.json"
@@ -70,8 +83,8 @@ ShellRoot {
                 if (s.line !== undefined) root.styleLine = s.line;
                 if (s.alpha !== undefined) root.styleAlpha = s.alpha;
                 if (s.scale !== undefined) root.styleScale = s.scale;
-                if (s.w !== undefined) root.pillW = s.w;
-                if (s.h !== undefined) root.pillH = s.h;
+                if (typeof s.w === "number" && Number.isFinite(s.w) && s.w > 0) root.pillW = s.w;
+                if (typeof s.h === "number" && Number.isFinite(s.h) && s.h > 0) root.pillH = s.h;
             } catch (e) {}
         }
     }
@@ -168,6 +181,7 @@ ShellRoot {
     Process {
         id: saveProc
         command: ["true"]
+        onRunningChanged: if (!running) Qt.callLater(root.runNextSave)
     }
 
     Timer {
@@ -214,8 +228,8 @@ ShellRoot {
 
     function argsFor(mode) {
         const len = (player && player.length > 0) ? player.length : 0;
-        const cmd = [home + "/.local/bin/lyrsearch", mode, "--title", title, "--artist", artist, "--length", String(len)];
-        if (customQuery !== "") { cmd.push("--query"); cmd.push(customQuery); }
+        const cmd = [home + "/.local/bin/lyrsearch", mode, "--title=" + title, "--artist=" + artist, "--length=" + len];
+        if (customQuery !== "") cmd.push("--query=" + customQuery);
         return cmd;
     }
 
@@ -311,7 +325,7 @@ ShellRoot {
     }
 
     function toggleStyle() {
-        pickerOpen = false;
+        closePicker();
         styleOpen = !styleOpen;
     }
 
@@ -338,16 +352,22 @@ ShellRoot {
 
     function saveCurrent() {
         if (rawLrc === "" || !lyrTitle) return;
-        saveProc.running = false;
-        saveProc.command = [home + "/.local/bin/lyrsave", lyrArtist, lyrTitle,
-                            String(Math.round(offset * 1000)), curPath, rawLrc];
+        const args = [home + "/.local/bin/lyrsave", lyrArtist, lyrTitle,
+                      String(Math.round(offset * 1000)), curPath, rawLrc];
+        saveQueue.push(args);
+        runNextSave();
+    }
+
+    function runNextSave() {
+        if (saveProc.running || saveQueue.length === 0) return;
+        saveProc.command = saveQueue.shift();
         saveProc.running = true;
     }
 
     function syncTo(i) {
         if (!player || i < 0 || i >= lines.length) return;
         player.positionChanged();
-        offset = lines[i].t - player.position + 0.15;
+        offset = lines[i].t - (player.position + timingLead);
         idx = i;
         saveTimer.restart();
     }
@@ -358,10 +378,10 @@ ShellRoot {
         running: root.player !== null
         onTriggered: {
             root.player.positionChanged();
-            const p = root.player.position + 0.15 + root.offset;
+            const p = root.player.position + root.timingLead + root.offset;
             let n = -1;
             for (let i = 0; i < root.lines.length; i++) {
-                if (root.lines[i].t <= p) n = i; else break;
+                if (root.lines[i].t <= p + 1e-8) n = i; else break;
             }
             if (n !== root.idx) root.idx = n;
         }
@@ -409,10 +429,12 @@ ShellRoot {
 
         Rectangle {
             id: pill
-            width: root.pillW
-            height: root.pillH
-            x: (win.width - width) / 2
-            y: win.height - height - 60
+            width: root.clamp(root.pillW, Math.min(420, win.width), win.width)
+            height: root.clamp(root.pillH, Math.min(90, win.height), win.height)
+            x: root.clamp(Number.isFinite(root.pillX) ? root.pillX : (win.width - width) / 2,
+                          0, win.width - width)
+            y: root.clamp(Number.isFinite(root.pillY) ? root.pillY : win.height - height - 60,
+                          0, win.height - height)
             radius: 22
             clip: true
             color: Qt.alpha(root.bgColor(), root.styleAlpha)
@@ -421,7 +443,7 @@ ShellRoot {
 
             Text {
                 anchors.centerIn: parent
-                width: parent.width - 200
+                width: Math.max(0, parent.width - 200)
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
                 visible: root.lines.length === 0
@@ -524,12 +546,10 @@ ShellRoot {
                         const g = grip.mapToItem(null, mouse.x, mouse.y);
                         sx = g.x;
                         sy = g.y;
-                        pill.x = pill.x;
-                        pill.y = pill.y;
                         ox = pill.x;
                         oy = pill.y;
-                        ow = root.pillW;
-                        oh = root.pillH;
+                        ow = pill.width;
+                        oh = pill.height;
                     }
 
                     onPositionChanged: (mouse) => {
@@ -537,12 +557,14 @@ ShellRoot {
                         const g = grip.mapToItem(null, mouse.x, mouse.y);
                         const dx = g.x - sx;
                         const dy = g.y - sy;
-                        const nw = Math.max(420, Math.min(onLeft ? ow - dx : ow + dx, win.width - 20));
-                        const nh = Math.max(90, Math.min(onTop ? oh - dy : oh + dy, win.height - 20));
+                        const maxW = Math.max(0, onLeft ? ox + ow : win.width - ox);
+                        const maxH = Math.max(0, onTop ? oy + oh : win.height - oy);
+                        const nw = root.clamp(onLeft ? ow - dx : ow + dx, Math.min(420, maxW), maxW);
+                        const nh = root.clamp(onTop ? oh - dy : oh + dy, Math.min(90, maxH), maxH);
                         root.pillW = nw;
                         root.pillH = nh;
-                        pill.x = onLeft ? ox + (ow - nw) : ox;
-                        pill.y = onTop ? oy + (oh - nh) : oy;
+                        root.pillX = onLeft ? ox + (ow - nw) : ox;
+                        root.pillY = onTop ? oy + (oh - nh) : oy;
                     }
 
                     onReleased: styleSaveTimer.restart()
@@ -570,7 +592,7 @@ ShellRoot {
                     height: 4
                     radius: 2
                     anchors.centerIn: parent
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"),
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"),
                                     (dragArea.containsMouse || dragArea.pressed) ? 0.7 : 0.25)
                 }
 
@@ -579,12 +601,23 @@ ShellRoot {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-                    drag.target: pill
-                    drag.axis: Drag.XAndYAxis
-                    drag.minimumX: 0
-                    drag.maximumX: win.width - pill.width
-                    drag.minimumY: 0
-                    drag.maximumY: win.height - pill.height
+                    property real originX: 0
+                    property real originY: 0
+                    property real startX: 0
+                    property real startY: 0
+                    onPressed: (mouse) => {
+                        const g = mapToItem(null, mouse.x, mouse.y);
+                        startX = g.x;
+                        startY = g.y;
+                        originX = pill.x;
+                        originY = pill.y;
+                    }
+                    onPositionChanged: (mouse) => {
+                        if (!pressed) return;
+                        const g = mapToItem(null, mouse.x, mouse.y);
+                        root.pillX = root.clamp(originX + g.x - startX, 0, win.width - pill.width);
+                        root.pillY = root.clamp(originY + g.y - startY, 0, win.height - pill.height);
+                    }
                 }
             }
 
@@ -601,7 +634,7 @@ ShellRoot {
                     anchors.centerIn: parent
                     text: "✕"
                     font.pixelSize: 15
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"), closeArea.containsMouse ? 0.95 : 0.4)
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), closeArea.containsMouse ? 0.95 : 0.4)
                 }
 
                 MouseArea {
@@ -626,7 +659,7 @@ ShellRoot {
                     anchors.centerIn: parent
                     text: "☰"
                     font.pixelSize: 16
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"),
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"),
                                     (listArea.containsMouse || root.pickerOpen) ? 0.95 : 0.4)
                 }
 
@@ -652,7 +685,7 @@ ShellRoot {
                     anchors.centerIn: parent
                     text: "↻"
                     font.pixelSize: 17
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"),
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"),
                                     (reloadArea.containsMouse || root.busy) ? 0.95 : 0.4)
                 }
 
@@ -679,7 +712,7 @@ ShellRoot {
                     text: "Aa"
                     font.pixelSize: 15
                     font.bold: true
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"),
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"),
                                     (styleArea.containsMouse || root.styleOpen) ? 0.95 : 0.4)
                 }
 
@@ -697,9 +730,16 @@ ShellRoot {
             id: popup
             visible: root.pickerOpen || root.styleOpen
             width: pill.width
-            height: 300
+            height: Math.min(300, win.height)
             x: pill.x
-            y: Math.max(0, Math.min(win.height - height, (pill.y - height - 10 >= 0) ? pill.y - height - 10 : pill.y + pill.height + 10))
+            y: {
+                const above = pill.y - 10;
+                const below = win.height - pill.y - pill.height - 10;
+                if (above >= height) return above - height;
+                if (below >= height) return win.height - below;
+                // Neither side is large enough. Use the one with less overlap.
+                return above >= below ? 0 : win.height - height;
+            }
             radius: 22
             clip: true
             color: Qt.alpha(root.bgColor(), Math.min(1, root.styleAlpha + 0.1))
@@ -713,7 +753,9 @@ ShellRoot {
                     const q = searchInput.text.trim();
                     if (q !== "") {
                         root.customQuery = q;
-                        root.autoOpen = true;
+                        // The in-widget picker is already visible. Never reopen it
+                        // automatically if the user closes it or opens Aa later.
+                        root.autoOpen = false;
                         root.fetchLyrics(true);
                     }
                 }
@@ -728,14 +770,17 @@ ShellRoot {
                 Text {
                     id: pickerTitle
                     anchors.left: parent.left
+                    anchors.right: pickerClose.left
                     anchors.top: parent.top
                     anchors.margins: 16
                     text: "Choose lyrics (your pick is saved to ~/Music/Lyrics)"
+                    elide: Text.ElideRight
                     font.pixelSize: 14
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"), 0.7)
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), 0.7)
                 }
 
                 Item {
+                    id: pickerClose
                     width: 32
                     height: 28
                     anchors.top: parent.top
@@ -746,7 +791,7 @@ ShellRoot {
                         anchors.centerIn: parent
                         text: "✕"
                         font.pixelSize: 15
-                        color: Qt.alpha(root.c("on_surface", "#E9D5BF"), pcloseArea.containsMouse ? 0.95 : 0.4)
+                        color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), pcloseArea.containsMouse ? 0.95 : 0.4)
                     }
 
                     MouseArea {
@@ -767,14 +812,14 @@ ShellRoot {
                     anchors.rightMargin: 12
                     anchors.top: pickerTitle.bottom
                     anchors.topMargin: 10
-                    color: Qt.alpha(root.c("primary", "#E9D5BF"), sbArea.containsMouse ? 0.4 : 0.25)
+                    color: Qt.alpha(root.uiInk("primary", "#E9D5BF"), sbArea.containsMouse ? 0.4 : 0.25)
 
                     Text {
                         anchors.centerIn: parent
                         text: "Search"
                         font.pixelSize: 13
                         font.bold: true
-                        color: root.c("on_surface", "#E9D5BF")
+                        color: root.uiInk("on_surface", "#E9D5BF")
                     }
 
                     MouseArea {
@@ -795,13 +840,13 @@ ShellRoot {
                     anchors.right: searchBtn.left
                     anchors.rightMargin: 6
                     anchors.verticalCenter: searchBtn.verticalCenter
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"), abArea.containsMouse ? 0.2 : 0.1)
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), abArea.containsMouse ? 0.2 : 0.1)
 
                     Text {
                         anchors.centerIn: parent
                         text: "Auto"
                         font.pixelSize: 13
-                        color: root.c("on_surface", "#E9D5BF")
+                        color: root.uiInk("on_surface", "#E9D5BF")
                     }
 
                     MouseArea {
@@ -822,9 +867,9 @@ ShellRoot {
                     anchors.right: autoBtn.visible ? autoBtn.left : searchBtn.left
                     anchors.rightMargin: 6
                     anchors.verticalCenter: searchBtn.verticalCenter
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"), 0.08)
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), 0.08)
                     border.width: 1
-                    border.color: Qt.alpha(root.c("primary", "#E9D5BF"), searchInput.activeFocus ? 0.8 : 0.2)
+                    border.color: Qt.alpha(root.uiInk("primary", "#E9D5BF"), searchInput.activeFocus ? 0.8 : 0.2)
 
                     TextInput {
                         id: searchInput
@@ -835,9 +880,9 @@ ShellRoot {
                         clip: true
                         selectByMouse: true
                         font.pixelSize: 14
-                        color: root.c("on_surface", "#E9D5BF")
-                        selectionColor: root.c("primary", "#E9D5BF")
-                        selectedTextColor: root.c("surface_container", "#1b1410")
+                        color: root.uiInk("on_surface", "#E9D5BF")
+                        selectionColor: root.uiInk("primary", "#E9D5BF")
+                        selectedTextColor: root.bgColor()
                         onAccepted: pickerView.submit()
                         Keys.onEscapePressed: root.closePicker()
                     }
@@ -845,11 +890,13 @@ ShellRoot {
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin: 14
+                        anchors.rightMargin: 14
                         verticalAlignment: Text.AlignVCenter
                         visible: searchInput.text === ""
                         text: "Search artist and title, then press Enter"
+                        elide: Text.ElideRight
                         font.pixelSize: 14
-                        color: Qt.alpha(root.c("on_surface", "#E9D5BF"), 0.4)
+                        color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), 0.4)
                     }
                 }
 
@@ -859,7 +906,7 @@ ShellRoot {
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
                     visible: root.cands.length === 0
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"), 0.6)
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), 0.6)
                     font.pixelSize: 14
                     text: root.busy ? "Searching…" : "Nothing found. Try the search box above."
                 }
@@ -881,8 +928,8 @@ ShellRoot {
                         height: 42
                         radius: 10
                         color: index === root.curIndex
-                            ? Qt.alpha(root.c("primary", "#E9D5BF"), 0.22)
-                            : Qt.alpha(root.c("on_surface", "#E9D5BF"), prowArea.containsMouse ? 0.12 : 0.05)
+                            ? Qt.alpha(root.uiInk("primary", "#E9D5BF"), 0.22)
+                            : Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), prowArea.containsMouse ? 0.12 : 0.05)
 
                         Text {
                             id: badge
@@ -893,7 +940,7 @@ ShellRoot {
                             text: modelData.source
                             font.pixelSize: 12
                             font.bold: true
-                            color: root.c("primary", "#E9D5BF")
+                            color: root.uiInk("primary", "#E9D5BF")
                         }
 
                         Text {
@@ -903,7 +950,7 @@ ShellRoot {
                             anchors.verticalCenter: parent.verticalCenter
                             elide: Text.ElideRight
                             font.pixelSize: 14
-                            color: root.c("on_surface", "#E9D5BF")
+                            color: root.uiInk("on_surface", "#E9D5BF")
                             text: (modelData.artist ? modelData.artist + " - " : "") + modelData.title
                         }
 
@@ -913,7 +960,7 @@ ShellRoot {
                             anchors.rightMargin: 12
                             anchors.verticalCenter: parent.verticalCenter
                             font.pixelSize: 12
-                            color: Qt.alpha(root.c("on_surface", "#E9D5BF"), 0.6)
+                            color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), 0.6)
                             text: root.fmtDur(modelData.duration)
                                   + (modelData.source === "local" ? "" : "  " + Math.round(modelData.score * 100) + "%")
                         }
@@ -924,7 +971,7 @@ ShellRoot {
                             hoverEnabled: true
                             onClicked: {
                                 root.applyCand(index, true);
-                                root.pickerOpen = false;
+                                root.closePicker();
                             }
                         }
                     }
@@ -939,14 +986,17 @@ ShellRoot {
                 Text {
                     id: styleTitle
                     anchors.left: parent.left
+                    anchors.right: styleClose.left
                     anchors.top: parent.top
                     anchors.margins: 16
                     text: "Style (saved automatically)"
+                    elide: Text.ElideRight
                     font.pixelSize: 14
-                    color: Qt.alpha(root.c("on_surface", "#E9D5BF"), 0.7)
+                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), 0.7)
                 }
 
                 Item {
+                    id: styleClose
                     width: 32
                     height: 28
                     anchors.top: parent.top
@@ -957,7 +1007,7 @@ ShellRoot {
                         anchors.centerIn: parent
                         text: "✕"
                         font.pixelSize: 15
-                        color: Qt.alpha(root.c("on_surface", "#E9D5BF"), scloseArea.containsMouse ? 0.95 : 0.4)
+                        color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), scloseArea.containsMouse ? 0.95 : 0.4)
                     }
 
                     MouseArea {
@@ -969,205 +1019,225 @@ ShellRoot {
                     }
                 }
 
-                Column {
+                Flickable {
                     anchors.top: styleTitle.bottom
                     anchors.topMargin: 14
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 16
-                    spacing: 14
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 8
+                    clip: true
+                    contentWidth: width
+                    contentHeight: styleControls.implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
+                    flickableDirection: Flickable.VerticalFlick
 
-                    Item {
-                        width: parent.width
-                        height: 30
+                    Column {
+                        id: styleControls
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: 16
+                        anchors.rightMargin: 16
+                        spacing: 14
 
-                        Text {
-                            id: bgLabel
-                            width: 130
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "Background colour"
-                            font.pixelSize: 14
-                            color: root.c("on_surface", "#E9D5BF")
-                        }
-
-                        Row {
-                            anchors.left: bgLabel.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 8
-
-                            Repeater {
-                                model: root.bgSwatches
-
-                                delegate: Rectangle {
-                                    width: 28
-                                    height: 28
-                                    radius: 14
-                                    color: modelData !== "" ? modelData : root.c("surface_container", "#1b1410")
-                                    border.width: root.styleBg === modelData ? 2 : 1
-                                    border.color: root.styleBg === modelData ? "#FFFFFF" : Qt.rgba(1, 1, 1, 0.3)
-
-                                    Text {
-                                        visible: modelData === ""
-                                        anchors.centerIn: parent
-                                        text: "A"
-                                        font.pixelSize: 13
-                                        color: root.c("on_surface", "#E9D5BF")
-                                    }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.setStyle("bg", modelData)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Item {
-                        width: parent.width
-                        height: 30
-
-                        Text {
-                            id: lineLabel
-                            width: 130
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "Line colour"
-                            font.pixelSize: 14
-                            color: root.c("on_surface", "#E9D5BF")
-                        }
-
-                        Row {
-                            anchors.left: lineLabel.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 8
-
-                            Repeater {
-                                model: root.lineSwatches
-
-                                delegate: Rectangle {
-                                    width: 28
-                                    height: 28
-                                    radius: 14
-                                    color: modelData !== "" ? modelData : root.c("primary", "#E9D5BF")
-                                    border.width: root.styleLine === modelData ? 2 : 1
-                                    border.color: root.styleLine === modelData ? "#FFFFFF" : Qt.rgba(1, 1, 1, 0.3)
-
-                                    Text {
-                                        visible: modelData === ""
-                                        anchors.centerIn: parent
-                                        text: "A"
-                                        font.pixelSize: 13
-                                        font.bold: true
-                                        color: root.c("surface_container", "#1b1410")
-                                    }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.setStyle("line", modelData)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Repeater {
-                        model: root.sliderDefs
-
-                        delegate: Item {
+                        Item {
                             width: parent.width
                             height: 30
-                            property real val: modelData.key === "alpha" ? 1 - root.styleAlpha : root.styleScale
-                            property real frac: Math.max(0, Math.min(1, (val - modelData.min) / (modelData.max - modelData.min)))
 
                             Text {
-                                id: sLabel
-                                width: 130
+                                id: bgLabel
+                                width: Math.min(130, parent.width * 0.34)
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: modelData.label
+                                text: "Background colour"
+                                elide: Text.ElideRight
                                 font.pixelSize: 14
-                                color: root.c("on_surface", "#E9D5BF")
+                                color: root.uiInk("on_surface", "#E9D5BF")
                             }
 
-                            Text {
-                                id: sVal
-                                width: 48
+                            Row {
+                                id: bgRow
+                                anchors.left: bgLabel.right
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                horizontalAlignment: Text.AlignRight
-                                text: Math.round(val * 100) + "%"
-                                font.pixelSize: 13
-                                color: Qt.alpha(root.c("on_surface", "#E9D5BF"), 0.7)
+                                spacing: Math.min(8, Math.floor(width / 40))
+
+                                Repeater {
+                                    model: root.bgSwatches
+
+                                    delegate: Rectangle {
+                                        width: root.swatchSize(bgRow.width, bgRow.spacing, root.bgSwatches.length)
+                                        height: width
+                                        radius: width / 2
+                                        color: modelData !== "" ? modelData : root.c("surface_container", "#1b1410")
+                                        border.width: root.styleBg === modelData ? 2 : 1
+                                        border.color: root.styleBg === modelData ? "#FFFFFF" : Qt.rgba(1, 1, 1, 0.3)
+
+                                        Text {
+                                            visible: modelData === ""
+                                            anchors.centerIn: parent
+                                            text: "A"
+                                            font.pixelSize: 13
+                                            color: root.uiInk("on_surface", "#E9D5BF")
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.setStyle("bg", modelData)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Item {
+                            width: parent.width
+                            height: 30
+
+                            Text {
+                                id: lineLabel
+                                width: Math.min(130, parent.width * 0.34)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "Line colour"
+                                elide: Text.ElideRight
+                                font.pixelSize: 14
+                                color: root.uiInk("on_surface", "#E9D5BF")
                             }
 
-                            Rectangle {
-                                id: track
-                                anchors.left: sLabel.right
-                                anchors.right: sVal.left
-                                anchors.rightMargin: 14
+                            Row {
+                                id: lineRow
+                                anchors.left: lineLabel.right
+                                anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                height: 6
-                                radius: 3
-                                color: Qt.alpha(root.c("on_surface", "#E9D5BF"), 0.2)
+                                spacing: Math.min(8, Math.floor(width / 40))
 
-                                Rectangle {
-                                    width: parent.width * frac
-                                    height: parent.height
-                                    radius: 3
-                                    color: root.c("primary", "#E9D5BF")
+                                Repeater {
+                                    model: root.lineSwatches
+
+                                    delegate: Rectangle {
+                                        width: root.swatchSize(lineRow.width, lineRow.spacing, root.lineSwatches.length)
+                                        height: width
+                                        radius: width / 2
+                                        color: modelData !== "" ? modelData : root.uiInk("primary", "#E9D5BF")
+                                        border.width: root.styleLine === modelData ? 2 : 1
+                                        border.color: root.styleLine === modelData ? "#FFFFFF" : Qt.rgba(1, 1, 1, 0.3)
+
+                                        Text {
+                                            visible: modelData === ""
+                                            anchors.centerIn: parent
+                                            text: "A"
+                                            font.pixelSize: 13
+                                            font.bold: true
+                                            color: root.c("surface_container", "#1b1410")
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.setStyle("line", modelData)
+                                        }
+                                    }
                                 }
+                            }
+                        }
 
-                                Rectangle {
-                                    id: knob
-                                    width: 18
-                                    height: 18
-                                    radius: 9
+                        Repeater {
+                            model: root.sliderDefs
+
+                            delegate: Item {
+                                width: parent.width
+                                height: 30
+                                property real val: modelData.key === "alpha" ? 1 - root.styleAlpha : root.styleScale
+                                property real frac: Math.max(0, Math.min(1, (val - modelData.min) / (modelData.max - modelData.min)))
+
+                                Text {
+                                    id: sLabel
+                                    width: Math.min(130, parent.width * 0.34)
                                     anchors.verticalCenter: parent.verticalCenter
-                                    x: (track.width - width) * frac
-                                    color: "#FFFFFF"
+                                    text: modelData.label
+                                    elide: Text.ElideRight
+                                    font.pixelSize: 14
+                                    color: root.uiInk("on_surface", "#E9D5BF")
                                 }
 
-                                MouseArea {
-                                    anchors.fill: parent
-                                    anchors.topMargin: -12
-                                    anchors.bottomMargin: -12
-                                    cursorShape: Qt.PointingHandCursor
+                                Text {
+                                    id: sVal
+                                    width: 48
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    horizontalAlignment: Text.AlignRight
+                                    text: Math.round(val * 100) + "%"
+                                    font.pixelSize: 13
+                                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), 0.7)
+                                }
 
-                                    function setFrom(mx) {
-                                        const f = Math.max(0, Math.min(1, (mx - knob.width / 2) / (track.width - knob.width)));
-                                        const v = modelData.min + f * (modelData.max - modelData.min);
-                                        if (modelData.key === "alpha") root.setStyle("alpha", Math.round((1 - v) * 100) / 100);
-                                        else root.setStyle("scale", Math.round(v * 100) / 100);
+                                Rectangle {
+                                    id: track
+                                    anchors.left: sLabel.right
+                                    anchors.right: sVal.left
+                                    anchors.rightMargin: 14
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    height: 6
+                                    radius: 3
+                                    color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), 0.2)
+
+                                    Rectangle {
+                                        width: parent.width * frac
+                                        height: parent.height
+                                        radius: 3
+                                        color: root.uiInk("primary", "#E9D5BF")
                                     }
 
-                                    onPressed: (mouse) => setFrom(mouse.x)
-                                    onPositionChanged: (mouse) => { if (pressed) setFrom(mouse.x) }
+                                    Rectangle {
+                                        id: knob
+                                        width: 18
+                                        height: 18
+                                        radius: 9
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        x: (track.width - width) * frac
+                                        color: "#FFFFFF"
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        anchors.topMargin: -12
+                                        anchors.bottomMargin: -12
+                                        cursorShape: Qt.PointingHandCursor
+
+                                        function setFrom(mx) {
+                                            const f = root.clamp((mx - knob.width / 2) / Math.max(1, track.width - knob.width), 0, 1);
+                                            const v = modelData.min + f * (modelData.max - modelData.min);
+                                            if (modelData.key === "alpha") root.setStyle("alpha", Math.round((1 - v) * 100) / 100);
+                                            else root.setStyle("scale", Math.round(v * 100) / 100);
+                                        }
+
+                                        onPressed: (mouse) => setFrom(mouse.x)
+                                        onPositionChanged: (mouse) => { if (pressed) setFrom(mouse.x) }
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    Rectangle {
-                        width: 90
-                        height: 28
-                        radius: 14
-                        color: Qt.alpha(root.c("on_surface", "#E9D5BF"), rsArea.containsMouse ? 0.2 : 0.1)
+                        Rectangle {
+                            width: 90
+                            height: 28
+                            radius: 14
+                            color: Qt.alpha(root.uiInk("on_surface", "#E9D5BF"), rsArea.containsMouse ? 0.2 : 0.1)
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Reset"
-                            font.pixelSize: 13
-                            color: root.c("on_surface", "#E9D5BF")
-                        }
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Reset"
+                                font.pixelSize: 13
+                                color: root.uiInk("on_surface", "#E9D5BF")
+                            }
 
-                        MouseArea {
-                            id: rsArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.resetStyle()
+                            MouseArea {
+                                id: rsArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.resetStyle()
+                            }
                         }
                     }
                 }

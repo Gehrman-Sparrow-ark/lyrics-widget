@@ -7,6 +7,7 @@ Window {
     property int curW: 760
     property int curH: 150
     property int shift: 0
+    readonly property int minW: 420
     readonly property int pillH: curH
     readonly property int popupH: 300
     readonly property int gap: 10
@@ -35,21 +36,30 @@ Window {
         return m + ":" + (r < 10 ? "0" : "") + r;
     }
 
-    function togglePicker() {
-        if (styleOpen) styleOpen = false;
-        backend.togglePicker();
+    function toggleStyle() {
+        // Set the replacement panel first so switching doesn't move the window twice.
+        styleOpen = !styleOpen;
+        if (styleOpen && backend.pickerOpen) backend.togglePicker();
     }
 
-    function toggleStyle() {
-        if (backend.pickerOpen) backend.togglePicker();
-        styleOpen = !styleOpen;
+    function activatePicker() {
+        if (visible && backend.pickerOpen) {
+            searchInput.forceActiveFocus(Qt.OtherFocusReason);
+            requestActivate();
+        }
+    }
+
+    function applySavedSize() {
+        curW = Math.max(minW, Math.round(st.w || 760));
+        curH = Math.max(90, Math.round(st.h || 150));
     }
 
     title: "Lyrics"
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+           | (backend.pickerOpen ? 0 : Qt.WindowDoesNotAcceptFocus)
     color: "transparent"
     visible: backend.shown && backend.hasPlayer
-    onVisibleChanged: if (visible && !backend.pickerOpen) backend.setFocusable(false)
+    onVisibleChanged: if (visible && backend.pickerOpen) Qt.callLater(win.activatePicker)
     width: curW
     height: curH + (popupOpen ? gap + popupH : 0)
     x: (Screen.width - width) / 2
@@ -67,22 +77,24 @@ Window {
         }
     }
 
-    Component.onCompleted: {
-        win.curW = Math.round(win.st.w || 760);
-        win.curH = Math.round(win.st.h || 150);
-    }
+    Component.onCompleted: applySavedSize()
 
     Connections {
         target: backend
-        function onStyleChanged() {
-            win.curW = Math.round(win.st.w || 760);
-            win.curH = Math.round(win.st.h || 150);
+        function onStyleChanged() { win.applySavedSize(); }
+        function onPickerOpenChanged() {
+            if (backend.pickerOpen) {
+                win.styleOpen = false;
+                searchInput.text = backend.searchQuery;
+                Qt.callLater(win.activatePicker);
+            } else {
+                searchInput.focus = false;
+            }
         }
-    }
-
-    Connections {
-        target: backend
-        function onPickerOpenChanged() { backend.setFocusable(backend.pickerOpen); }
+        function onSearchQueryChanged() {
+            if (searchInput.text !== backend.searchQuery)
+                searchInput.text = backend.searchQuery;
+        }
     }
 
     Rectangle {
@@ -214,7 +226,7 @@ Window {
                     const p = backend.cursorPos();
                     const dx = p.x - sx;
                     const dy = p.y - sy;
-                    const nw = Math.max(420, Math.min(onLeft ? ow - dx : ow + dx, win.screen.width - 20));
+                    const nw = Math.max(win.minW, Math.min(onLeft ? ow - dx : ow + dx, win.screen.width - 20));
                     const nh = Math.max(90, Math.min(onTop ? oh - dy : oh + dy, win.screen.height - 40));
                     win.curW = nw;
                     win.curH = nh;
@@ -320,7 +332,7 @@ Window {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: win.togglePicker()
+                onClicked: backend.togglePicker()
             }
         }
 
@@ -398,11 +410,6 @@ Window {
                 backend.searchText(searchInput.text);
             }
 
-            Connections {
-                target: backend
-                function onCandsChanged() { }
-            }
-
             Text {
                 id: pickerTitle
                 anchors.left: parent.left
@@ -465,12 +472,40 @@ Window {
             }
 
             Rectangle {
+                id: autoBtn
+                objectName: "lyricsAutoButton"
+                visible: backend.searchQuery !== ""
+                width: 64
+                height: 34
+                radius: 17
+                anchors.right: searchBtn.left
+                anchors.rightMargin: 6
+                anchors.verticalCenter: searchBtn.verticalCenter
+                color: Qt.alpha(win.c("on_surface", "#E9D5BF"), abArea.containsMouse ? 0.2 : 0.1)
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Auto"
+                    font.pixelSize: 13
+                    color: win.c("on_surface", "#E9D5BF")
+                }
+
+                MouseArea {
+                    id: abArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: backend.autoSearch()
+                }
+            }
+
+            Rectangle {
                 id: searchBox
                 height: 34
                 radius: 17
                 anchors.left: parent.left
                 anchors.leftMargin: 12
-                anchors.right: searchBtn.left
+                anchors.right: autoBtn.visible ? autoBtn.left : searchBtn.left
                 anchors.rightMargin: 6
                 anchors.verticalCenter: searchBtn.verticalCenter
                 color: Qt.alpha(win.c("on_surface", "#E9D5BF"), 0.08)
@@ -479,6 +514,7 @@ Window {
 
                 TextInput {
                     id: searchInput
+                    objectName: "lyricsSearchInput"
                     anchors.fill: parent
                     anchors.leftMargin: 14
                     anchors.rightMargin: 14
@@ -582,7 +618,7 @@ Window {
         Item {
             id: styleView
             anchors.fill: parent
-            visible: win.styleOpen
+            visible: win.styleOpen && !backend.pickerOpen
 
             Text {
                 id: styleTitle
@@ -640,17 +676,22 @@ Window {
                     }
 
                     Row {
+                        id: bgRow
+                        objectName: "backgroundSwatches"
+                        readonly property int count: win.bgSwatches.length
+                        readonly property real available: parent.width - bgLabel.width
+                        readonly property int chipSize: Math.min(28, Math.floor((available - spacing * (count - 1)) / count))
                         anchors.left: bgLabel.right
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
+                        spacing: Math.max(4, Math.min(8, (available - 28 * count) / (count - 1)))
 
                         Repeater {
                             model: win.bgSwatches
 
                             delegate: Rectangle {
-                                width: 28
-                                height: 28
-                                radius: 14
+                                width: bgRow.chipSize
+                                height: width
+                                radius: width / 2
                                 color: modelData !== "" ? modelData : win.c("surface_container", "#1b1410")
                                 border.width: win.st.bg === modelData ? 2 : 1
                                 border.color: win.st.bg === modelData ? "#FFFFFF" : Qt.rgba(1, 1, 1, 0.3)
@@ -687,17 +728,22 @@ Window {
                     }
 
                     Row {
+                        id: lineRow
+                        objectName: "lineSwatches"
+                        readonly property int count: win.lineSwatches.length
+                        readonly property real available: parent.width - lineLabel.width
+                        readonly property int chipSize: Math.min(28, Math.floor((available - spacing * (count - 1)) / count))
                         anchors.left: lineLabel.right
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
+                        spacing: Math.max(4, Math.min(8, (available - 28 * count) / (count - 1)))
 
                         Repeater {
                             model: win.lineSwatches
 
                             delegate: Rectangle {
-                                width: 28
-                                height: 28
-                                radius: 14
+                                width: lineRow.chipSize
+                                height: width
+                                radius: width / 2
                                 color: modelData !== "" ? modelData : win.c("primary", "#E9D5BF")
                                 border.width: win.st.line === modelData ? 2 : 1
                                 border.color: win.st.line === modelData ? "#FFFFFF" : Qt.rgba(1, 1, 1, 0.3)

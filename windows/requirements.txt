@@ -1,6 +1,19 @@
-PySide6
-winrt-runtime
-winrt-Windows.Media.Control
-winrt-Windows.Foundation
-winrt-Windows.Foundation.Collections
-winrt-Windows.Storage.Streams
+# Locked Windows x64 wheels, CPython 3.11 and 3.12. Includes transitive dependencies.
+# Install with: python -m pip install --require-hashes --only-binary=:all: -r requirements.txt
+pyside6-essentials==6.10.2 \
+    --hash=sha256:0741018c2b6395038cad4c41775cfae3f13a409e87995ac9f7d89e5b1fb6b22a
+shiboken6==6.10.2 \
+    --hash=sha256:10f3c8c5e1b8bee779346f21c10dbc14cff068f0b0b4e62420c82a6bf36ac2e7
+typing-extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+winrt-runtime==4.2.0 \
+    --hash=sha256:653f29c8b4bdfb375aa1a5830a952c9c549b583748e4dd8741f77e3ecc284a1e \
+    --hash=sha256:75a9a37c4cb171d944ca14e0c35452bc1ba4347913f708cdaf14d576103a9604
+winrt-windows.foundation==4!10.0.28000.2957 \
+    --hash=sha256:0669de7ce480806a0f9a46d005837799e37f1738911b54c4bc04788b37974e69
+winrt-windows.foundation.collections==4!10.0.28000.2957 \
+    --hash=sha256:0401c1b6ed512d1fdad8ba1571698e9000ebee6a69781db9a01994ffcc54a503
+winrt-windows.media.control==4!10.0.28000.2957 \
+    --hash=sha256:5d010ccf64e39040b0550c7b8f6cf8015e558542bd3887cc424f32096e61410e
+winrt-windows.storage.streams==4!10.0.28000.2957 \
+    --hash=sha256:e113832320f2e7f8b09cedfb400cb7eaf0ac769ad1f2038ddbe88801497916c4
