@@ -68,7 +68,14 @@ Window {
     onPopupOpenChanged: {
         const extra = win.gap + win.popupH;
         if (popupOpen) {
-            const ny = Math.max(0, win.y - extra);
+            // Select the display containing the compact pill, not the expanded window.
+            const area = backend.screenWorkArea(
+                Math.round(win.x + win.width / 2), Math.round(win.y + win.pillH / 2));
+            const desiredTop = win.y - extra;
+            const fullHeight = win.pillH + extra;
+            const ny = area.height > 0
+                ? Math.max(area.top, Math.min(desiredTop, area.top + area.height - fullHeight))
+                : desiredTop;
             win.shift = win.y - ny;
             win.y = ny;
         } else {
