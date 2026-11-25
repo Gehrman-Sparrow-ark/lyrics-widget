@@ -60,7 +60,8 @@ fi
 echo "Publishing $package to $slug"
 gh release create "$tag" --target "$head" --title "lyrics-widget ${tag#v}" \
     --notes "Arch package ${package}. Verify with SHA256SUMS." \
-    "$stage/$package" "$stage/SHA256SUMS" "$stage/SOURCE-SHA256SUMS" "$stage/PROVENANCE.txt"
+    "$stage/$package" "$stage/lyrics-widget.db" "$stage/lyrics-widget.files" \
+    "$stage/SHA256SUMS" "$stage/SOURCE-SHA256SUMS" "$stage/PROVENANCE.txt"
 
 if ! gh release view repo >/dev/null 2>&1; then
     gh release create repo --title "pacman repo" \
@@ -99,5 +100,7 @@ if (( ${#pkgs[@]} > 2 )); then
     done
 fi
 
+echo
+echo "Published $tag. Machines update with:  sudo pacman -Syu  then  lyrics-widget-setup"
 echo
 echo "Published $tag. Machines update with:  sudo pacman -Syu  then  lyrics-widget-setup"
