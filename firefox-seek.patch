@@ -1,0 +1,113 @@
+diff --git a/windows/lyricswidget.py b/windows/lyricswidget.py
+--- a/windows/lyricswidget.py
++++ b/windows/lyricswidget.py
+@@ -33,6 +33,7 @@
+ LYR_DIR = Path.home() / "Music" / "Lyrics"
+ LYRSEARCH = APP_DIR / "lyrsearch.py"
+ DISPLAY_LEAD = 0.15
++UNKNOWN_POSITION = -1.0  # Outside the range of a valid playback position.
+ STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "lyrics-widget"
+ STATE_DIR.mkdir(parents=True, exist_ok=True)
+ 
+@@ -208,6 +209,7 @@
+         self.length = 0.0
+         self.playing = False
+         self.posRef = 0.0
++        self.positionKnown = False
+         self.posAt = time.monotonic()
+         self.loadedKey = ""
+         self.rawLrc = ""
+@@ -245,7 +247,7 @@
+         return self.posRef + ((time.monotonic() - self.posAt) if self.playing else 0.0)
+ 
+     def tick(self):
+-        if not self.times:
++        if not self.times or not self.positionKnown:
+             return
+         p = self.curPos() + DISPLAY_LEAD + self._offset
+         # Exact click-to-sync can land one floating-point step before the line.
+@@ -255,14 +257,24 @@
+     @Slot(bool, str, str, float, float, bool)
+     def onMedia(self, has, title, artist, pos, length, playing):
+         self.hasPlayer = has
+-        self.posRef = pos
++        changed = has and (title != self.title or artist != self.artist)
++        self.positionKnown = has and pos >= 0.0
++        if self.positionKnown:
++            self.posRef = pos
++        elif changed:
++            self.posRef = 0.0
++        elif self.playing:
++            self.posRef = self.curPos()
+         self.posAt = time.monotonic()
+-        self.length = length
+-        self.playing = playing
+-        if has and (title != self.title or artist != self.artist):
++        if changed or length > 0.0:
++            self.length = length
++        self.playing = playing and self.positionKnown
++        if changed:
+             self.title = title
+             self.artist = artist
+             self.fetchLyrics(False)
++        elif self.positionKnown:
++            self.tick()
+ 
+     # ---- searching ----
+     def fetchLyrics(self, force, query=""):
+@@ -457,7 +469,7 @@
+ 
+     @Slot(int)
+     def syncTo(self, i):
+-        if i < 0 or i >= len(self._lines):
++        if not self.positionKnown or i < 0 or i >= len(self._lines):
+             return
+         self.offset = self._lines[i]["t"] - (self.curPos() + DISPLAY_LEAD)
+         self.idx = i
+@@ -548,6 +560,25 @@
+             self.nudge(0.5)
+         elif name == "later":
+             self.nudge(-0.5)
++
++
++def timeline_sample(tl, playing):
++    pos = tl.position.total_seconds()
++    length = max(0.0, (tl.end_time - tl.start_time).total_seconds())
++    # Firefox clears both fields when it has no media position state.
++    # A real seek to zero with a known duration is still valid.
++    if pos == 0.0 and length == 0.0:
++        return UNKNOWN_POSITION, 0.0
++    if playing:
++        last = tl.last_updated_time
++        if last.tzinfo is None:
++            last = last.replace(tzinfo=timezone.utc)
++        dt = (datetime.now(timezone.utc) - last).total_seconds()
++        if 0 < dt < 86400:
++            pos += dt
++    if length > 0:
++        pos = min(pos, length)
++    return max(0.0, pos), length
+ 
+ 
+ class MediaPoller(threading.Thread):
+@@ -587,18 +618,8 @@
+                             continue
+                         playing = s.get_playback_info().playback_status == PStatus.PLAYING
+                         tl = s.get_timeline_properties()
+-                        pos = tl.position.total_seconds()
+-                        length = (tl.end_time - tl.start_time).total_seconds()
+-                        if playing:
+-                            last = tl.last_updated_time
+-                            if last.tzinfo is None:
+-                                last = last.replace(tzinfo=timezone.utc)
+-                            dt = (datetime.now(timezone.utc) - last).total_seconds()
+-                            if 0 < dt < 86400:
+-                                pos += dt
+-                        if length > 0:
+-                            pos = min(pos, length)
+-                        item = (playing, title, props.artist or "", max(0.0, pos), max(0.0, length))
++                        pos, length = timeline_sample(tl, playing)
++                        item = (playing, title, props.artist or "", pos, length)
+                         if best is None or (item[0] and not best[0]):
+                             best = item
+                     except Exception as e:
