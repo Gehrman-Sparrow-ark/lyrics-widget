@@ -16,6 +16,7 @@ Or clone the repository: `git clone https://github.com/Gehrman-Sparrow-ark/lyric
 Double-click `install.bat` or run it in Command Prompt. It uses a private `.venv` in this copy, installs only the pinned and hash-checked wheels, runs dependency and import checks, and then asks whether to start the widget with Windows. If you say Yes, it saves a shortcut in your per-user Startup folder and reads back the target, working directory and arguments. To skip that prompt and never change Startup, run:
 
 ```bat
+.venv\Scripts\python.exe -I -m ensurepip --upgrade
 install.bat --no-autostart
 ```
 
