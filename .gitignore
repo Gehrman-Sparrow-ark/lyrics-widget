@@ -5,3 +5,10 @@ src/
 __pycache__/
 .venv/
 dist/
+!/android/app/src/
+/android/.gradle/
+/android/local.properties
+/android/**/build/
+*.jks
+*.keystore
+keystore.properties
