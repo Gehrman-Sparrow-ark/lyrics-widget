@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths: ['android/**', '.github/workflows/android.yml']
-    tags: ['android-v*']
   workflow_dispatch:
 
 permissions:
@@ -29,12 +28,9 @@ jobs:
           gradle assembleDebug --no-daemon 2>&1 | tee build.log || { grep "^e: " build.log; exit 1; }
       - name: Name the APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk lyrics-widget.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: lyrics-widget-apk
-          path: lyrics-widget.apk
-      - name: Publish release (tags named android-v*)
-        if: startsWith(github.ref, 'refs/tags/android-v')
+      - name: Publish to the android-latest release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" lyrics-widget.apk --title "Lyrics Widget for Android ${GITHUB_REF_NAME#android-v}" --notes "Install lyrics-widget.apk, then follow the setup steps in android/README.md."
+        run: |
+          gh release delete android-latest --cleanup-tag --yes || true
+          gh release create android-latest lyrics-widget.apk --target "$GITHUB_SHA" --title "Lyrics Widget for Android (latest)" --notes "Download lyrics-widget.apk below and install it. Setup steps are in android/README.md."
