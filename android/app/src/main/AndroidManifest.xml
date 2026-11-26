@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
@@ -31,6 +32,8 @@
             android:taskAffinity=""
             android:theme="@style/Theme.LyricsPicker"
             android:windowSoftInputMode="adjustResize|stateHidden" />
+
+        <receiver android:name=".CloseLyricsReceiver" android:exported="false" />
 
         <service
             android:name=".LyricsService"

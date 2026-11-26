@@ -24,19 +24,23 @@ class MediaTracker(ctx: Context) {
         repick(list)
     }
 
-    private val callback = object : MediaController.Callback() {
+    private var callback: MediaController.Callback? = null
+
+    private fun callbackFor(controller: MediaController) = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) {
+            if (attached !== controller) return
             meta = metadata
             publish()
         }
 
         override fun onPlaybackStateChanged(state: PlaybackState?) {
+            if (attached !== controller) return
             this@MediaTracker.state = state
             publish()
         }
 
         override fun onSessionDestroyed() {
-            poll(false)
+            if (attached === controller) poll(false)
         }
     }
 
@@ -70,16 +74,22 @@ class MediaTracker(ctx: Context) {
         if (loop) handler.postDelayed({ poll(true) }, 1500)
     }
 
-    private fun isPlaying(c: MediaController): Boolean {
-        val s = c.playbackState?.state
-        return s == PlaybackState.STATE_PLAYING || s == PlaybackState.STATE_BUFFERING
-    }
+    fun refresh() = poll(false)
+
+    private fun isPlaying(c: MediaController): Boolean =
+        c.playbackState?.state == PlaybackState.STATE_PLAYING
+
+    private fun isStarting(state: Int?): Boolean =
+        state == PlaybackState.STATE_BUFFERING || state == PlaybackState.STATE_CONNECTING
 
     private fun repick(list: List<MediaController>?) {
+        if (!running) return
         val l = list ?: emptyList()
         val best = l.firstOrNull { isPlaying(it) }
+            ?: l.firstOrNull { isStarting(it.playbackState?.state) }
+            // Keep the current paused session, but do not replace it with an unrelated
+            // stale player if Android temporarily drops it when the screen is locked.
             ?: l.firstOrNull { it.sessionToken == attached?.sessionToken }
-            ?: l.firstOrNull()
         if (best == null) {
             detach()
             LyricsStore.noPlayer()
@@ -88,12 +98,14 @@ class MediaTracker(ctx: Context) {
         if (attached?.sessionToken != best.sessionToken) {
             attach(best)
         } else {
-            // Recover a seek/update if the app did not deliver a controller callback.
+            // Recover playback and title updates if a controller callback is missed.
+            val freshMeta = best.metadata
             val fresh = best.playbackState
             val old = state
-            if (fresh?.state != old?.state || fresh?.position != old?.position ||
+            if (freshMeta != meta || fresh?.state != old?.state || fresh?.position != old?.position ||
                 fresh?.lastPositionUpdateTime != old?.lastPositionUpdateTime ||
                 fresh?.playbackSpeed != old?.playbackSpeed) {
+                meta = freshMeta
                 state = fresh
                 publish()
             }
@@ -103,7 +115,7 @@ class MediaTracker(ctx: Context) {
     private fun attach(c: MediaController) {
         detach()
         attached = c
-        c.registerCallback(callback, handler)
+        callback = callbackFor(c).also { c.registerCallback(it, handler) }
         meta = c.metadata
         state = c.playbackState
         LyricsStore.transport = c.transportControls
@@ -111,7 +123,10 @@ class MediaTracker(ctx: Context) {
     }
 
     private fun detach() {
-        try { attached?.unregisterCallback(callback) } catch (e: Exception) { }
+        callback?.let { cb ->
+            try { attached?.unregisterCallback(cb) } catch (_: Exception) { }
+        }
+        callback = null
         attached = null
         meta = null
         state = null
@@ -121,8 +136,8 @@ class MediaTracker(ctx: Context) {
     private fun publish() {
         if (attached == null) return
         val m = meta
-        val title = m?.getString(MediaMetadata.METADATA_KEY_TITLE)
-            ?: m?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: ""
+        val title = m?.getString(MediaMetadata.METADATA_KEY_TITLE)?.takeIf { it.isNotBlank() }
+            ?: m?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)?.takeIf { it.isNotBlank() }.orEmpty()
         val artist = m?.getString(MediaMetadata.METADATA_KEY_ARTIST)
             ?: m?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
             ?: m?.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE) ?: ""
@@ -146,6 +161,7 @@ class MediaTracker(ctx: Context) {
             }
         }
         if (dur > 0.0) pos = minOf(pos, dur)
-        LyricsStore.onMedia(title.isNotEmpty(), title, artist, art, dur, pos, known, playing, speed)
+        LyricsStore.onMedia(title.isNotEmpty(), title, artist, art, dur, pos, known, playing, speed,
+            isStarting(s?.state))
     }
 }

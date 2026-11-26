@@ -1,14 +1,14 @@
 package com.lyricswidget.app
 
-import android.content.ComponentName
+import android.Manifest
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.service.notification.NotificationListenerService
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -44,6 +44,27 @@ class MainActivity : AppCompatActivity() {
     private val storeListener: () -> Unit = { updateNow() }
     private val importLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importLrc(uri)
+    }
+
+    private val lockNotificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+            Prefs.showLockLyrics = allowed
+            buildContent()
+        }
+
+    private fun setLockLyrics(enabled: Boolean) {
+        if (!enabled) {
+            Prefs.showLockLyrics = false
+        } else if (NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+            Prefs.showLockLyrics = true
+        } else if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            lockNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+        }
+        scroll.post { buildContent() }
     }
 
     private val bgSwatches = listOf("#000000", "#0B0B10", "#1B1410", "#16213E", "#1F2A1F", "#2B1B2E", "#3B1F1F", "#2B2B2B", "#FFFFFF")
@@ -92,11 +113,7 @@ class MainActivity : AppCompatActivity() {
         LyricsStore.appVisible = true
         Prefs.sp.registerOnSharedPreferenceChangeListener(prefListener)
         LyricsStore.addListener(storeListener)
-        if (notifAccess() && LyricsService.instance == null) {
-            try {
-                NotificationListenerService.requestRebind(ComponentName(this, LyricsService::class.java))
-            } catch (e: Exception) { }
-        }
+        LyricsService.reconnect(this)
         LyricsService.instance?.refresh()
         val y = scroll.scrollY
         buildContent()
@@ -108,8 +125,25 @@ class MainActivity : AppCompatActivity() {
         LyricsStore.appVisible = false
         Prefs.sp.unregisterOnSharedPreferenceChangeListener(prefListener)
         LyricsStore.removeListener(storeListener)
-        LyricsService.instance?.refresh()
+        LyricsService.instance?.refresh(rescan = true)
         super.onPause()
+    }
+
+    private fun showWidgetNow() {
+        val message = when {
+            !notifAccess() -> "Allow Notification access in Setup first."
+            !overlayOk() -> "Allow Display over other apps in Setup first."
+            LyricsService.instance?.showWidgetNow() != true -> {
+                Prefs.enabled = true
+                LyricsService.reconnect(this)
+                "Connecting to Android media. Try Show widget now again in a moment."
+            }
+            else -> {
+                if (!moveTaskToBack(true)) finish()
+                return
+            }
+        }
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     // ---- preview ----
@@ -343,6 +377,10 @@ class MainActivity : AppCompatActivity() {
                 Prefs.enabled = it
                 if (it) LyricsStore.undismiss()
             }
+            buttons("Show widget now" to { showWidgetNow() })
+            gap()
+            switchRow("Lyrics on the lock screen", "Shows your song and current line in a notification others can see.",
+                { Prefs.showLockLyrics }, ::setLockLyrics)
             switchRow("Hide when paused", "Hides 8 seconds after you pause", { Prefs.hideWhenPaused }) { Prefs.hideWhenPaused = it }
             switchRow("Hide when no lyrics found", null, { Prefs.hideNoLyrics }) { Prefs.hideNoLyrics = it }
         }

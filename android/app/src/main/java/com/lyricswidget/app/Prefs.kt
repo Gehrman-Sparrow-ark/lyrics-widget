@@ -37,6 +37,8 @@ object Prefs {
     }
 
     var enabled by BoolP("enabled", true)
+    var dismissed by BoolP("dismissed", false)
+    var showLockLyrics by BoolP("showLockLyrics", false)
 
     // Colours: "#RRGGBB", or for bg the special value "art" (tinted from the album cover).
     // line "" means automatic (light on dark, dark on light).

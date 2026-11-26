@@ -22,7 +22,8 @@ class OverlayController(private val ctx: Context) {
     private var card: LyricsCard? = null
     private var lp: WindowManager.LayoutParams? = null
     private var running = false
-    private var pausedSince = 0L
+    private val visibility = OverlayVisibility()
+    private val lockLyrics = LockLyricsNotification(ctx)
 
     private var dragOx = 0
     private var dragOy = 0
@@ -41,6 +42,8 @@ class OverlayController(private val ctx: Context) {
     fun start() {
         if (running) return
         running = true
+        lockLyrics.clear(force = true)
+        if (LyricsStore.title.isNotBlank()) visibility.showNow()
         Prefs.sp.registerOnSharedPreferenceChangeListener(prefListener)
         LyricsStore.addListener(storeListener)
         main.post(ticker)
@@ -48,6 +51,8 @@ class OverlayController(private val ctx: Context) {
 
     fun stop() {
         running = false
+        visibility.reset()
+        lockLyrics.clear()
         main.removeCallbacksAndMessages(null)
         Prefs.sp.unregisterOnSharedPreferenceChangeListener(prefListener)
         LyricsStore.removeListener(storeListener)
@@ -56,34 +61,48 @@ class OverlayController(private val ctx: Context) {
 
     private fun canDraw(): Boolean = Settings.canDrawOverlays(ctx)
 
+    fun showNow() {
+        visibility.showNow()
+        LyricsStore.undismiss()
+    }
+
     fun evaluate(render: Boolean = true) {
         if (!running) return
         val s = LyricsStore
-        var show = Prefs.enabled && canDraw() && s.hasPlayer && !s.appVisible && s.dismissedKey != s.key()
-        if (show && Prefs.hideNoLyrics && s.lines.isEmpty() && !s.busy) show = false
-        if (show && Prefs.hideWhenPaused) {
-            if (s.playing) {
-                pausedSince = 0L
-            } else {
-                if (pausedSince == 0L) pausedSince = SystemClock.elapsedRealtime()
-                if (SystemClock.elapsedRealtime() - pausedSince > 8000) show = false
-            }
-        } else {
-            pausedSince = 0L
-        }
-        if (show) {
+        val eligible = visibility.shouldShow(
+            now = SystemClock.elapsedRealtime(),
+            enabled = Prefs.enabled,
+            canDraw = canDraw(),
+            dismissed = s.dismissed,
+            hasTrack = s.hasPlayer,
+            playbackActive = s.playbackActive,
+            hasLyricsOrLoading = s.lines.isNotEmpty() || s.busy,
+            hideNoLyrics = Prefs.hideNoLyrics,
+            hideWhenPaused = Prefs.hideWhenPaused
+        )
+        if (!eligible || !Prefs.showLockLyrics) lockLyrics.clear()
+        else if (render) lockLyrics.update(cardState())
+        if (eligible && !s.appVisible) {
             val wasAttached = card != null
             attach()
-            if (render || !wasAttached) renderCard()
+            if (render || !wasAttached) card?.render(cardState())
         } else {
             detach()
         }
     }
 
-    private fun renderCard() {
-        val c = card ?: return
+    private fun cardState(): CardState {
         val s = LyricsStore
-        c.render(CardState(s.title, s.artist, s.art, s.lines, s.idx, s.status, s.playing, s.curPos(), s.length))
+        return if (s.hasPlayer || (!s.playbackActive && s.title.isNotBlank())) {
+            CardState(s.title, s.artist, s.art, s.lines, s.idx, s.status, s.playing, s.curPos(), s.length)
+        } else {
+            val status = when {
+                s.starting -> "Playback is starting…"
+                s.playing -> "Waiting for song info…"
+                else -> "Press Play in your music app"
+            }
+            CardState("Lyrics Widget", "", null, emptyList(), -1, status, s.playing, 0.0, 0.0)
+        }
     }
 
     private fun screenW(): Int = ctx.resources.displayMetrics.widthPixels
@@ -105,7 +124,10 @@ class OverlayController(private val ctx: Context) {
             try { ctx.startActivity(i) } catch (e: Exception) { }
         }
         c.onReload = { LyricsStore.reload() }
-        c.onClose = { LyricsStore.dismiss() }
+        c.onClose = {
+            visibility.reset()
+            LyricsStore.dismiss()
+        }
         c.onSync = { i -> LyricsStore.syncTo(i) }
         c.onPrev = { LyricsStore.prev() }
         c.onNext = { LyricsStore.next() }

@@ -17,6 +17,7 @@ object LyricsStore {
 
     private lateinit var dir: File
     private lateinit var searcher: Searcher
+    private lateinit var recent: RecentLyricsCache
     private val main = Handler(Looper.getMainLooper())
     private val listeners = LinkedHashSet<() -> Unit>()
 
@@ -26,6 +27,9 @@ object LyricsStore {
     var artist = ""
     var art: Bitmap? = null
     var playing = false
+    var starting = false
+        private set
+    val playbackActive: Boolean get() = playing || starting
     var length = 0.0
     var positionKnown = false
     var transport: MediaController.TransportControls? = null
@@ -45,7 +49,7 @@ object LyricsStore {
     var customQuery = ""
     var pickerOpen = false
     var appVisible = false
-    var dismissedKey = ""
+    val dismissed: Boolean get() = Prefs.dismissed
 
     private var lyrArtist = ""
     private var lyrTitle = ""
@@ -58,6 +62,7 @@ object LyricsStore {
     private var onlineFinished = false
     private var localCands: List<Cand> = emptyList()
     private var onlineCands: List<Cand> = emptyList()
+    private var cachedCandidate: Cand? = null
     private var savePending = false
     private val saveRunnable = Runnable { saveCurrent() }
 
@@ -65,6 +70,7 @@ object LyricsStore {
         if (::dir.isInitialized) return
         dir = File(ctx.applicationContext.filesDir, "lyrics").apply { mkdirs() }
         searcher = Searcher(dir)
+        recent = RecentLyricsCache(ctx.applicationContext)
     }
 
     fun addListener(l: () -> Unit) { listeners.add(l) }
@@ -72,8 +78,8 @@ object LyricsStore {
     private fun changed() { for (l in listeners.toList()) l() }
 
     fun key(): String = "$artist|$title"
-    fun dismiss() { dismissedKey = key(); changed() }
-    fun undismiss() { dismissedKey = ""; changed() }
+    fun dismiss() { Prefs.dismissed = true; changed() }
+    fun undismiss() { Prefs.dismissed = false; changed() }
 
     // ---- timing ----
     fun curPos(): Double {
@@ -98,20 +104,23 @@ object LyricsStore {
 
     // ---- media updates (from MediaTracker) ----
     fun noPlayer() {
-        if (!hasPlayer && art == null) return
+        if (!hasPlayer && !playbackActive && !positionKnown) return
+        posRef = curPos()
+        posAt = SystemClock.elapsedRealtime()
         hasPlayer = false
         playing = false
-        art = null
+        starting = false
+        positionKnown = false
         changed()
     }
 
     fun onMedia(
         has: Boolean, t: String, a: String, bmp: Bitmap?, len: Double,
-        pos: Double, known: Boolean, isPlaying: Boolean, spd: Double
+        pos: Double, known: Boolean, isPlaying: Boolean, spd: Double, isStarting: Boolean
     ) {
         val trackChanged = has && (t != title || a != artist)
         hasPlayer = has
-        art = if (has) bmp else null
+        if (has) art = bmp
         val previousPosition = curPos()
         positionKnown = known
         if (known) posRef = pos else if (trackChanged) posRef = 0.0 else posRef = previousPosition
@@ -119,6 +128,7 @@ object LyricsStore {
         if (trackChanged || len > 0.0) length = len
         speed = spd
         playing = isPlaying
+        starting = isStarting
         if (trackChanged) {
             title = t
             artist = a
@@ -145,6 +155,7 @@ object LyricsStore {
         idx = -1
         localCands = emptyList()
         onlineCands = emptyList()
+        cachedCandidate = null
         cands = emptyList()
         curIndex = -1
         rawLrc = ""
@@ -160,7 +171,8 @@ object LyricsStore {
         val a = lyrArtist
         Net.pool.execute {
             val res = try { searcher.local(t, a, query) } catch (e: Exception) { emptyList() }
-            main.post { onLocal(g, res) }
+            val cached = if (!force && query.isEmpty() && res.isEmpty()) recent.get(t, a) else null
+            main.post { onLocal(g, res, cached) }
         }
         main.postDelayed({ watchdog(g) }, 30000)
         changed()
@@ -199,7 +211,7 @@ object LyricsStore {
 
     private fun rebuild() { cands = localCands + onlineCands }
 
-    private fun onLocal(g: Int, res: List<Cand>) {
+    private fun onLocal(g: Int, res: List<Cand>, cached: Cand?) {
         if (g != gen) return
         localRunning = false
         localCands = res
@@ -211,13 +223,27 @@ object LyricsStore {
             changed()
             return
         }
+        if (cached != null) {
+            cachedCandidate = cached
+            onlineCands = listOf(cached)
+            rebuild()
+            busy = false
+            if (applyCandidate(0, false)) {
+                if (pickerOpen) runOnline()
+                return
+            }
+            cachedCandidate = null
+            onlineCands = emptyList()
+            rebuild()
+        }
         runOnline()
     }
 
     private fun onOnline(g: Int, res: OnlineResult) {
         if (g != gen) return
         onlineRunning = false
-        onlineCands = res.cands
+        val cached = cachedCandidate
+        onlineCands = if (cached == null) res.cands else listOf(cached) + res.cands.filterNot { it.lrc == cached.lrc }
         rebuild()
         onlineFinished = true
         busy = false
@@ -229,7 +255,7 @@ object LyricsStore {
                     else -> "no lyrics found, tap ↻ to retry"
                 }
             } else if (customQuery.isEmpty() && cands[0].score >= 0.55) {
-                applyCandidate(0, false)
+                if (applyCandidate(0, false)) recent.put(lyrTitle, lyrArtist, cands[0])
             } else {
                 status = "${cands.size} possible matches, tap ☰ to choose"
             }
@@ -328,7 +354,7 @@ object LyricsStore {
     }
 
     fun importLrc(text: String): Boolean {
-        if (!Lrc.synced(text) || lyrTitle.isEmpty()) return false
+        if (!hasPlayer || !Lrc.synced(text) || lyrTitle.isEmpty()) return false
         val c = Cand("local", lyrArtist, lyrTitle, "", 0.0, 2.0, text, "")
         localCands = listOf(c) + localCands
         rebuild()
