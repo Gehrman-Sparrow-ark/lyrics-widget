@@ -4,11 +4,7 @@ A floating synced-lyrics card pinned at the top of the screen, like a music play
 
 ## Download
 
-Every push to `main` that changes `android/` builds a new APK automatically.
-
-**[Download lyrics-widget.apk](https://github.com/Gehrman-Sparrow-ark/lyrics-widget/releases/download/android-latest/lyrics-widget.apk)**
-
-Open the link on your phone and install it. Allow "Install unknown apps" if asked. New builds install over the old one and keep your settings.
+The new signed app installs alongside the old test app and doesn’t transfer settings or saved timing automatically.
 
 ## First run
 
