@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.Lyrics" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#7A5A44</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+    </style>
+
+    <style name="Theme.LyricsPicker" parent="Theme.Material3.DayNight.Dialog">
+        <item name="colorPrimary">#7A5A44</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+    </style>
+</resources>
