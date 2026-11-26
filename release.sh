@@ -44,7 +44,10 @@ done
     export PKGDEST="$work/packages"
     # Clean sources are staged above. Missing dependencies must be installed separately.
     makepkg --cleanbuild
-    mapfile -t packages < <(makepkg --packagelist)
+    # makepkg --packagelist can also list a -debug package that is never built; keep real files only.
+    mapfile -t packages < <(makepkg --packagelist | while IFS= read -r listed; do
+        [[ -f "$listed" ]] && printf '%s\n' "$listed"
+    done)
     (( ${#packages[@]} == 1 )) || { echo 'Expected exactly one package.' >&2; exit 1; }
     package_path="${packages[0]}"
     [[ "$package_path" == "$work/packages/"* && -f "$package_path" ]] ||

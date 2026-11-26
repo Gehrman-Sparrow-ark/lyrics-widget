@@ -102,5 +102,3 @@ fi
 
 echo
 echo "Published $tag. Machines update with:  sudo pacman -Syu  then  lyrics-widget-setup"
-echo
-echo "Published $tag. Machines update with:  sudo pacman -Syu  then  lyrics-widget-setup"

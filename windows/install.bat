@@ -36,9 +36,9 @@ rem Repair a compatible virtual environment left without pip.
 if not errorlevel 1 goto install_dependencies
 echo pip is missing or unusable. Repairing pip in .venv...
 "%LW_PY%" -I -m ensurepip --upgrade
-if errorlevel 1 goto invalid_venv
+if errorlevel 1 goto no_pip
 "%LW_PY%" -I -m pip --version >nul 2>&1
-if errorlevel 1 goto invalid_venv
+if errorlevel 1 goto no_pip
 
 :install_dependencies
 "%LW_PY%" -I -m pip --isolated --disable-pip-version-check install --require-hashes --only-binary=:all: -r requirements.txt
@@ -81,6 +81,12 @@ goto failed
 
 :invalid_venv
 echo This folder has an incompatible or incomplete .venv. Rename it and rerun install.bat.
+goto failed
+
+:no_pip
+echo Python could not install pip into .venv.
+echo Run the python.org installer for Python 3.12 or 3.11, choose Modify and make sure pip is ticked.
+echo Then rename .venv to .venv-broken and run install.bat again.
 goto failed
 
 :directory_error

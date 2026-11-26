@@ -1,6 +1,6 @@
 # Maintainer: Gehrman-Sparrow-ark
 pkgname=lyrics-widget
-pkgver=1.3.2
+pkgver=1.3.3
 pkgrel=1
 pkgdesc='Floating synced-lyrics widget for Quickshell (MPRIS, LRCLIB, Kugou, NetEase)'
 arch=('any')
@@ -9,6 +9,7 @@ license=('MIT')
 depends=('python' 'quickshell')
 optdepends=('noto-fonts-cjk: show Chinese, Japanese and Korean lyrics correctly')
 install=lyrics-widget.install
+options=('!debug')
 source=('lyrsearch' 'lyrsave' 'shell.qml' 'lyrics-widget-setup' 'LICENSE')
 sha256sums=('c067bc38fe725c4763a638f55aed459f57497b35d2a62ea65ada775880e81afd'
             '7ab9e71fa2d2b1f4a14af06e3d18565948e2de82a6ae78760c52e1dc5a1c7654'

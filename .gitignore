@@ -5,6 +5,3 @@ src/
 __pycache__/
 .venv/
 dist/
-
-!android/
-!android/**/src/

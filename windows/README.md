@@ -10,9 +10,8 @@ A floating synced-lyrics pill that follows whatever you play (Spotify, YouTube M
 ## Install
 
 Download the ZIP of a release (it never changes after publishing):
-[v1.3.2-1](https://github.com/Gehrman-Sparrow-ark/lyrics-widget/archive/refs/tags/v1.3.2-1.zip).
+[v1.3.3-1](https://github.com/Gehrman-Sparrow-ark/lyrics-widget/archive/refs/tags/v1.3.3-1.zip).
 Or clone the repository: `git clone https://github.com/Gehrman-Sparrow-ark/lyrics-widget.git`. Extract or clone to a normal local folder and open its `windows` subfolder.
-The tagged ZIP keeps its original installer; the automatic pip repair described below applies to the updated installer.
 
 Double-click `install.bat` or run it in Command Prompt. It uses a private `.venv` in this copy, repairs missing pip in an otherwise compatible environment, installs the pinned and hash-checked widget dependencies, runs dependency and import checks, and then asks whether to start the widget with Windows. If you say Yes, it saves a shortcut in your per-user Startup folder and reads back the target, working directory and arguments. To skip that prompt and never change Startup, run:
 
@@ -77,9 +76,6 @@ Song titles and artists are sent to LRCLIB, Kugou and NetEase to find lyrics. Ku
 - **No lyrics for a song:** use the picker's search box, or open `Music\Lyrics` and add an `.lrc` file named like the song.
 - **Chinese, Japanese or Korean lyrics show as boxes:** install a CJK font such as Noto Sans CJK.
 
-## Uninstall
-
-Quit the widget, open `shell:startup` and remove the Lyrics Widget shortcut if you created one, then remove the widget folder if no longer needed. This removes only this copy's `.venv`; do not uninstall packages from your global Python. Your lyrics in `Music\Lyrics` and local preferences are stored separately.
 ## Uninstall
 
 Quit the widget, open `shell:startup` and remove the Lyrics Widget shortcut if you created one, then remove the widget folder if no longer needed. This removes only this copy's `.venv`; do not uninstall packages from your global Python. Your lyrics in `Music\Lyrics` and local preferences are stored separately.
