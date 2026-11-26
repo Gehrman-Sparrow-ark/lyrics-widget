@@ -131,13 +131,13 @@ class PickerActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         LyricsStore.addListener(listener)
-        LyricsStore.setPickerOpen(true)
+        LyricsStore.notifyPicker(true)
         refresh()
     }
 
     override fun onStop() {
         LyricsStore.removeListener(listener)
-        LyricsStore.setPickerOpen(false)
+        LyricsStore.notifyPicker(false)
         super.onStop()
     }
 

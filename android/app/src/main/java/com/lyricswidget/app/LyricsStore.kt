@@ -305,7 +305,7 @@ object LyricsStore {
 
     fun pick(i: Int): Boolean = applyCandidate(i, true)
 
-    fun setPickerOpen(open: Boolean) {
+    fun notifyPicker(open: Boolean) {
         pickerOpen = open
         if (open) runOnline()
     }
