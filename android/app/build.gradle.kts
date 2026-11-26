@@ -8,30 +8,23 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.lyricswidget.app"
+        applicationId = "com.lyricswidget.app.release"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
     }
 
     // A committed debug key keeps every build signed the same way, so a new APK
     // installs over the old one without uninstalling first.
-    signingConfigs {
-        getByName("debug") {
-            storeFile = file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
-
     buildTypes {
-        release {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
-        }
+    debug {
+        applicationIdSuffix = ".debug"
     }
+    release {
+        isMinifyEnabled = false
+    }
+   }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
