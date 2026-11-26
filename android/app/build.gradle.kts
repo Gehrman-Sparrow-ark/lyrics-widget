@@ -15,16 +15,14 @@ android {
         versionName = "1.0.1"
     }
 
-    // A committed debug key keeps every build signed the same way, so a new APK
-    // installs over the old one without uninstalling first.
     buildTypes {
-    debug {
-        applicationIdSuffix = ".debug"
+        debug {
+            applicationIdSuffix = ".debug"
+        }
+        release {
+            isMinifyEnabled = false
+        }
     }
-    release {
-        isMinifyEnabled = false
-    }
-   }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

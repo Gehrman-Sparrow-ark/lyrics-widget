@@ -30,9 +30,9 @@ class OverlayController(private val ctx: Context) {
     private val ticker = object : Runnable {
         override fun run() {
             if (!running) return
-            LyricsStore.tick()
-            evaluate()
-            main.postDelayed(this, 200)
+            val nextLine = LyricsStore.tick()
+            evaluate(nextLine || Prefs.showProgress)
+            main.postDelayed(this, if (card != null && LyricsStore.playing) 50 else 200)
         }
     }
     private val storeListener: () -> Unit = { evaluate() }
@@ -56,7 +56,7 @@ class OverlayController(private val ctx: Context) {
 
     private fun canDraw(): Boolean = Settings.canDrawOverlays(ctx)
 
-    fun evaluate() {
+    fun evaluate(render: Boolean = true) {
         if (!running) return
         val s = LyricsStore
         var show = Prefs.enabled && canDraw() && s.hasPlayer && !s.appVisible && s.dismissedKey != s.key()
@@ -72,8 +72,9 @@ class OverlayController(private val ctx: Context) {
             pausedSince = 0L
         }
         if (show) {
+            val wasAttached = card != null
             attach()
-            renderCard()
+            if (render || !wasAttached) renderCard()
         } else {
             detach()
         }
@@ -127,8 +128,10 @@ class OverlayController(private val ctx: Context) {
             val p = lp
             if (p != null) {
                 val density = ctx.resources.displayMetrics.density
-                Prefs.posX = (p.x / density).roundToInt()
-                Prefs.posY = (p.y / density).roundToInt()
+                Prefs.sp.edit()
+                    .putInt("posX", (p.x / density).roundToInt())
+                    .putInt("posY", (p.y / density).roundToInt())
+                    .apply()
             }
         }
 

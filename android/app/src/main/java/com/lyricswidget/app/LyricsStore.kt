@@ -112,8 +112,9 @@ object LyricsStore {
         val trackChanged = has && (t != title || a != artist)
         hasPlayer = has
         art = if (has) bmp else null
+        val previousPosition = curPos()
         positionKnown = known
-        if (known) posRef = pos else if (trackChanged) posRef = 0.0 else if (playing) posRef = curPos()
+        if (known) posRef = pos else if (trackChanged) posRef = 0.0 else posRef = previousPosition
         posAt = SystemClock.elapsedRealtime()
         if (trackChanged || len > 0.0) length = len
         speed = spd

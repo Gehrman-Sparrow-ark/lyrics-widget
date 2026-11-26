@@ -16,8 +16,10 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -119,6 +121,10 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
     private var downX = 0f
     private val seekHandler: (Float) -> Unit = { f -> onSeek?.invoke(f) }
     private var downY = 0f
+    private var dragCandidate = false
+    private var movingCard = false
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var lastPlaying: Boolean? = null
 
     private fun d(v: Number): Int = context.dp(v)
 
@@ -161,7 +167,9 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
         }
 
     fun rebuild() {
+        lyricsBox?.animate()?.cancel()
         removeAllViews()
+        lastPlaying = null
         orientation = VERTICAL
         val scale = Prefs.textScale / 100f
         ink = inkColor()
@@ -184,12 +192,10 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
         }
         gripWrap.addView(
             grip,
-            FrameLayout.LayoutParams(d(36), d(4), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
-                topMargin = d(7)
-                bottomMargin = d(3)
+            FrameLayout.LayoutParams(d(36), d(4), Gravity.CENTER).apply {
             }
         )
-        zone.addView(gripWrap, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        zone.addView(gripWrap, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, d(28)))
 
         val header = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -238,7 +244,6 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
         header.addView(iconButton(R.drawable.ic_refresh, d(34), d(7)) { onReload?.invoke() })
         header.addView(iconButton(R.drawable.ic_close, d(34), d(8)) { onClose?.invoke() })
         zone.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        if (!Prefs.lockPos) zone.setOnTouchListener { _, e -> handleDrag(e) }
         addView(zone, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         // Lyric lines
@@ -335,22 +340,71 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
         last?.let { render(it) }
     }
 
+    // Buttons and the seek slider keep their own gestures; lyric taps still sync.
+    private fun onControl(v: View, x: Float, y: Float): Boolean {
+        if (v.visibility != View.VISIBLE) return false
+        if (v is SeekBarView || (v is ImageView && v.isClickable)) {
+            val xy = IntArray(2)
+            v.getLocationOnScreen(xy)
+            return x >= xy[0] && x < xy[0] + v.width && y >= xy[1] && y < xy[1] + v.height
+        }
+        if (v is ViewGroup) {
+            for (i in 0 until v.childCount) if (onControl(v.getChildAt(i), x, y)) return true
+        }
+        return false
+    }
+
+    private fun startGesture(e: MotionEvent) {
+        movingCard = false
+        downX = e.rawX
+        downY = e.rawY
+        dragCandidate = onDrag != null && !Prefs.lockPos && !onControl(this, downX, downY)
+    }
+
+    private fun moveGesture(e: MotionEvent): Boolean {
+        if (!dragCandidate || e.pointerCount != 1) return movingCard
+        val dx = e.rawX - downX
+        val dy = e.rawY - downY
+        if (!movingCard && dx * dx + dy * dy > touchSlop.toFloat() * touchSlop) {
+            movingCard = true
+            onDragStart?.invoke()
+        }
+        if (movingCard) onDrag?.invoke(dx, dy)
+        return movingCard
+    }
+
+    private fun endGesture() {
+        if (movingCard) onDragEnd?.invoke()
+        dragCandidate = false
+        movingCard = false
+    }
+
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> startGesture(e)
+            MotionEvent.ACTION_MOVE -> return moveGesture(e)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> endGesture()
+        }
+        return false
+    }
+
     @SuppressLint("ClickableViewAccessibility")
-    private fun handleDrag(e: MotionEvent): Boolean {
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (onDrag == null) return super.onTouchEvent(e) // settings preview
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = e.rawX
-                downY = e.rawY
-                onDragStart?.invoke()
+                startGesture(e)
+                return dragCandidate
             }
-            MotionEvent.ACTION_MOVE -> onDrag?.invoke(e.rawX - downX, e.rawY - downY)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> onDragEnd?.invoke()
+            MotionEvent.ACTION_MOVE -> moveGesture(e)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> endGesture()
         }
         return true
     }
 
     // ---- drawing a frame ----
     fun render(s: CardState) {
+        val previous = last
         last = s
 
         if (bgDirty || s.art !== bgArt) {
@@ -359,8 +413,9 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
             bgDrawable.setColor(bgBase(s.art).withAlpha(Prefs.bgOpacity / 100f))
         }
 
-        titleView?.text = s.title.ifEmpty { "Nothing playing" }
-        artistView?.text = s.artist
+        val title = s.title.ifEmpty { "Nothing playing" }
+        titleView?.let { if (it.text != title) it.text = title }
+        artistView?.let { if (it.text != s.artist) it.text = s.artist }
 
         val iv = artView
         if (iv != null && (artDirty || s.art !== artShown)) {
@@ -391,11 +446,18 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
             if (tv.text.toString() != text) tv.text = text
             if (k == c) tv.setTextColor(ink.withAlpha(if (s.lines.isEmpty()) 0.7f else 1f))
         }
-        if (s.idx != lastIdx) {
-            if (lastIdx != Int.MIN_VALUE && s.idx == lastIdx + 1) {
-                lyricsBox?.let {
-                    it.translationY = d(14).toFloat()
-                    it.animate().translationY(0f).setDuration(260).start()
+        if (s.idx != lastIdx || previous?.lines !== s.lines) {
+            val step = s.idx - lastIdx
+            lyricsBox?.let { box ->
+                box.animate().cancel()
+                box.translationY = 0f
+                box.alpha = 1f
+                if (previous?.lines === s.lines && lastIdx in s.lines.indices &&
+                    s.idx in s.lines.indices && (step == 1 || step == -1)) {
+                    box.translationY = d(14).toFloat() * step
+                    box.alpha = 0.65f
+                    box.animate().translationY(0f).alpha(1f).setDuration(250)
+                        .setInterpolator(DecelerateInterpolator()).start()
                 }
             }
             lastIdx = s.idx
@@ -404,12 +466,17 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
         val sb = seek
         if (sb != null) {
             if (!sb.dragging) sb.fraction = if (s.length > 0) (s.pos / s.length).toFloat() else 0f
-            timeLeft?.text = fmtTime(s.pos)
-            timeRight?.text = if (s.length > 0) fmtTime(s.length) else "--:--"
+            val currentTime = fmtTime(s.pos)
+            val totalTime = if (s.length > 0) fmtTime(s.length) else "--:--"
+            timeLeft?.let { if (it.text != currentTime) it.text = currentTime }
+            timeRight?.let { if (it.text != totalTime) it.text = totalTime }
             sb.onSeek = if (s.length > 0) seekHandler else null
         }
-        playBtn?.setImageDrawable(
-            ContextCompat.getDrawable(context, if (s.playing) R.drawable.ic_pause else R.drawable.ic_play)
-        )
+        if (lastPlaying != s.playing) {
+            lastPlaying = s.playing
+            playBtn?.setImageDrawable(
+                ContextCompat.getDrawable(context, if (s.playing) R.drawable.ic_pause else R.drawable.ic_play)
+            )
+        }
     }
 }

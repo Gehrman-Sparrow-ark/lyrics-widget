@@ -85,7 +85,19 @@ class MediaTracker(ctx: Context) {
             LyricsStore.noPlayer()
             return
         }
-        if (attached?.sessionToken != best.sessionToken) attach(best)
+        if (attached?.sessionToken != best.sessionToken) {
+            attach(best)
+        } else {
+            // Recover a seek/update if the app did not deliver a controller callback.
+            val fresh = best.playbackState
+            val old = state
+            if (fresh?.state != old?.state || fresh?.position != old?.position ||
+                fresh?.lastPositionUpdateTime != old?.lastPositionUpdateTime ||
+                fresh?.playbackSpeed != old?.playbackSpeed) {
+                state = fresh
+                publish()
+            }
+        }
     }
 
     private fun attach(c: MediaController) {
@@ -129,8 +141,8 @@ class MediaTracker(ctx: Context) {
             known = s.position >= 0
             if (s.playbackSpeed > 0f) speed = s.playbackSpeed.toDouble()
             if (known) {
-                pos = s.position / 1000.0
-                if (playing) pos += (SystemClock.elapsedRealtime() - s.lastPositionUpdateTime) / 1000.0 * speed
+                pos = estimatePosition(s.position, s.lastPositionUpdateTime,
+                    SystemClock.elapsedRealtime(), playing, speed)
             }
         }
         if (dur > 0.0) pos = minOf(pos, dur)

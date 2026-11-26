@@ -9,13 +9,13 @@ The new signed app installs alongside the old test app and doesn’t transfer se
 ## First run
 
 1. Open the app and tap **Allow** next to Notification access and Display over other apps.
-2. If Android says the setting is restricted: App info, three-dot menu, **Allow restricted settings**, then try again.
+2. Android may restrict notification access for apps installed outside Google Play. If Play Protect blocks installation, keep it enabled. Developers can test in the Android Studio emulator and consult [Google’s Play Protect guidance](https://developers.google.com/android/play-protect/warning-dev-guidance).
 3. Set battery to **Unrestricted** so the card keeps running. On Xiaomi, also turn on Autostart.
 4. Play a song. The card appears at the top.
 
 ## Using it
 
-- Drag the top bar to move the card. **X** hides it until the next song.
+- Drag the top handle or swipe across the lyrics to move the card. Turn off **Lock position** first. **X** hides it until the next song.
 - Tap the line being sung to fix the timing. It is remembered for that song.
 - List button: choose another lyric or search by hand. Reload searches again.
 - Quick Settings tile **Lyrics widget** turns the card on and off.
