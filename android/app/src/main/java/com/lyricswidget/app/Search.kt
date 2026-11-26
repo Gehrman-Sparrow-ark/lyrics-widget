@@ -248,7 +248,7 @@ class Searcher(private val dir: File) {
             c.readTimeout = 8000
             c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) lyrics-widget/2.0")
             for ((k, v) in headers) c.setRequestProperty(k, v)
-            return c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.removePrefix("﻿")
+            return c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.removePrefix("\uFEFF")
         } finally {
             c.disconnect()
         }
@@ -337,7 +337,7 @@ class Searcher(private val dir: File) {
         )
         val content = (getJson(u2) as? JSONObject)?.str("content") ?: ""
         if (content.isEmpty()) return null
-        return String(Base64.decode(content, Base64.DEFAULT), Charsets.UTF_8).removePrefix("﻿")
+        return String(Base64.decode(content, Base64.DEFAULT), Charsets.UTF_8).removePrefix("\uFEFF")
     }
 
     private fun kugou(kws: List<String>): List<Meta> {
@@ -380,7 +380,7 @@ class Searcher(private val dir: File) {
             var sc = Match.localScore(stem, pairs, raw)
             if (query.isNotEmpty()) sc = maxOf(sc, Match.queryScore("", stem, query))
             if (sc < 0.75) continue
-            val lrc = try { f.readText().removePrefix("﻿") } catch (e: Exception) { continue }
+            val lrc = try { f.readText().removePrefix("\uFEFF") } catch (e: Exception) { continue }
             if (!Lrc.synced(lrc)) continue
             out.add(Cand("local", "", stem, "", 0.0, 1.0 + sc, lrc, f.absolutePath))
         }

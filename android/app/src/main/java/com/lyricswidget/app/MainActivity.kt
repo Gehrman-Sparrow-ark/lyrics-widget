@@ -347,7 +347,7 @@ class MainActivity : AppCompatActivity() {
         val text = try {
             contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
         } catch (e: Exception) { null }
-        val ok = text != null && LyricsStore.importLrc(text.removePrefix("﻿"))
+        val ok = text != null && LyricsStore.importLrc(text.removePrefix("\uFEFF"))
         Toast.makeText(this, if (ok) "Lyrics imported" else "That file has no timed lyrics (or nothing is playing)", Toast.LENGTH_LONG).show()
     }
 
