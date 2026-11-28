@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Themed icons use an alpha mask: a music note and a lyric card. -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M35,36 L60,28 Q64,27 64,31 L64,50 L58,51 L58,36 L41,42 L41,66 C41,72 37,76 31,76 C26,76 23,73 23,69 C23,63 28,59 35,59 Z" />
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M53,54 L82,51 Q86,51 85,56 L81,74 Q80,77 77,77 L48,80 Q44,80 45,76 L50,58 Q51,54 53,54 Z M57,59 L78,57 L77,60 L56,62 Z M56,65 L74,63 L73,66 L55,68 Z M54,71 L68,69 L67,72 L53,74 Z" />
+</vector>
