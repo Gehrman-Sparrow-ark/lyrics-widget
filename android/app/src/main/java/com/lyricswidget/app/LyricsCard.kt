@@ -19,14 +19,11 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
-import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import androidx.core.widget.TextViewCompat
-import kotlin.math.roundToInt
 
 /** Everything the card needs to draw one frame. */
 class CardState(
@@ -103,8 +100,7 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
     private var last: CardState? = null
     private var ink = Color.WHITE
     private var bgDrawable = GradientDrawable()
-    private var slots: List<TextView> = emptyList()
-    private var lyricsBox: LinearLayout? = null
+    private var lyricsBox: LyricsWaveView? = null
     private var artView: ImageView? = null
     private var titleView: TextView? = null
     private var artistView: TextView? = null
@@ -117,7 +113,6 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
     private var artDirty = true
     private var bgArt: Bitmap? = null
     private var bgDirty = true
-    private var lastIdx = Int.MIN_VALUE
     private var downX = 0f
     private val seekHandler: (Float) -> Unit = { f -> onSeek?.invoke(f) }
     private var downY = 0f
@@ -167,7 +162,6 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
         }
 
     fun rebuild() {
-        lyricsBox?.animate()?.cancel()
         removeAllViews()
         lastPlaying = null
         orientation = VERTICAL
@@ -179,7 +173,6 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
         clipToOutline = true
         bgDirty = true
         artDirty = true
-        lastIdx = Int.MIN_VALUE
 
         // Drag zone: grip bar + header. Dragging anywhere here moves the card.
         val zone = LinearLayout(context).apply { orientation = VERTICAL }
@@ -246,45 +239,11 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
         zone.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         addView(zone, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
-        // Lyric lines
-        var n = Prefs.visibleLines.coerceIn(1, 5)
-        if (n % 2 == 0) n += 1
-        val center = n / 2
-        val box = LinearLayout(context).apply {
-            orientation = VERTICAL
-            setPadding(d(16), d(4), d(16), d(2))
+        lyricsBox = LyricsWaveView(context, ink, scale, Prefs.visibleLines, Prefs.alignLeft) {
+            onSync?.invoke(it)
+        }.also {
+            addView(it, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, it.viewportHeight))
         }
-        val list = ArrayList<TextView>()
-        for (k in 0 until n) {
-            val isCenter = k == center
-            val tv = TextView(context).apply {
-                gravity = (if (Prefs.alignLeft) Gravity.START else Gravity.CENTER_HORIZONTAL) or Gravity.CENTER_VERTICAL
-                maxLines = 1
-                ellipsize = TextUtils.TruncateAt.END
-                if (isCenter) {
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(ink)
-                    TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                        this, 11, (20 * scale).roundToInt().coerceAtLeast(14), 1, TypedValue.COMPLEX_UNIT_SP
-                    )
-                } else {
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f * scale)
-                    setTextColor(ink.withAlpha(if (kotlin.math.abs(k - center) == 1) 0.6f else 0.3f))
-                }
-                setOnClickListener {
-                    val st = last
-                    if (st != null) {
-                        val i = st.idx + (k - center)
-                        if (st.lines.isNotEmpty() && i in st.lines.indices) onSync?.invoke(i)
-                    }
-                }
-            }
-            box.addView(tv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, d((if (isCenter) 40f else 28f) * scale)))
-            list.add(tv)
-        }
-        slots = list
-        lyricsBox = box
-        addView(box, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         // Progress
         seek = null
@@ -404,7 +363,6 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
 
     // ---- drawing a frame ----
     fun render(s: CardState) {
-        val previous = last
         last = s
 
         if (bgDirty || s.art !== bgArt) {
@@ -432,36 +390,7 @@ class LyricsCard(ctx: Context) : LinearLayout(ctx) {
             }
         }
 
-        val n = slots.size
-        val c = n / 2
-        for (k in 0 until n) {
-            val i = s.idx + (k - c)
-            val text = when {
-                s.lines.isEmpty() -> if (k == c) s.status.ifEmpty { "♪" } else ""
-                k == c -> if (s.idx in s.lines.indices) s.lines[s.idx].text.ifEmpty { "♪" } else "♪"
-                i in s.lines.indices -> s.lines[i].text.ifEmpty { "♪" }
-                else -> ""
-            }
-            val tv = slots[k]
-            if (tv.text.toString() != text) tv.text = text
-            if (k == c) tv.setTextColor(ink.withAlpha(if (s.lines.isEmpty()) 0.7f else 1f))
-        }
-        if (s.idx != lastIdx || previous?.lines !== s.lines) {
-            val step = s.idx - lastIdx
-            lyricsBox?.let { box ->
-                box.animate().cancel()
-                box.translationY = 0f
-                box.alpha = 1f
-                if (previous?.lines === s.lines && lastIdx in s.lines.indices &&
-                    s.idx in s.lines.indices && (step == 1 || step == -1)) {
-                    box.translationY = d(14).toFloat() * step
-                    box.alpha = 0.65f
-                    box.animate().translationY(0f).alpha(1f).setDuration(250)
-                        .setInterpolator(DecelerateInterpolator()).start()
-                }
-            }
-            lastIdx = s.idx
-        }
+        lyricsBox?.render(s.lines, s.idx, s.status)
 
         val sb = seek
         if (sb != null) {
