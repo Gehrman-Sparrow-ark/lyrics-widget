@@ -4,7 +4,7 @@ A floating synced-lyrics card pinned at the top of the screen, like a music play
 
 ## Download
 
-[Download Lyrics Widget for Android 1.0.1](https://github.com/Gehrman-Sparrow-ark/lyrics-widget/releases/download/android-v1.0.1/app-release.apk)
+[Download Lyrics Widget for Android 1.0.1](https://github.com/Gehrman-Sparrow-ark/lyrics-widget/releases/tag/android-v1.0.3)
 
 The new signed app installs alongside the old test app and doesn’t transfer settings or saved timing automatically.
 
